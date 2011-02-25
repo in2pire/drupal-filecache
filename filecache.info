@@ -1,3 +1,2 @@
-; $Id$
 name = "File Cache"
 description = "Cache all cachables item to the filesystem instead of to the database as per standard"
