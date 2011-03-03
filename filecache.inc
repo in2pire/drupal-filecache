@@ -1,154 +1,131 @@
 <?php
 
-/**
- * Return data from the persistent cache.
- *
- * @param $key
- *   The cache ID of the data to retrieve.
- * @param $table
- *   The table $table to store the data in. Valid core values are 'cache_filter',
- *   'cache_menu', 'cache_page', or 'cache' for the default cache.
- */
-function cache_get($key, $table = 'cache') {
-  global $user;
+class DrupalFileCache implements DrupalCacheInterface {
 
-  $src = variable_get('filecache_path', 'files/cache'). '/'. $table .'/'. urlencode($cid);
-  if (!file_exists($src)) {
-    return 0;
-  }
-  $cache = unserialize(file_get_contents($src));
-
-  if (isset($cache->data)) {
-    // If the data is permanent or we're not enforcing a minimum cache lifetime
-    // always return the cached data.
-    if ($cache->expire == CACHE_PERMANENT || !variable_get('cache_lifetime', 0)) {
-      $cache->data = db_decode_blob($cache->data);
+  function __construct($bin) {
+    $this->bin = $bin;
+    $filecache_directory = variable_get('filecache_directory', FALSE);
+    if ($filecache_directory === FALSE) {
+      // Default directory, protected by Apache
+      if (strstr($_SERVER['SERVER_SOFTWARE'], 'Apache') !== FALSE) {
+	$directory = DRUPAL_ROOT .'/'. conf_path() . '/filecache';
+	if (is_dir($directory) || mkdir($directory)) { // A bit of cleverness
+	  $htaccess = $directory . '/.htaccess';
+	  if (is_file($htaccess) ||
+	      file_put_contents($htaccess, "Order allow,deny\n") !== FALSE) {
+	    // Sucess in setting up protected filecache directory
+	    $filecache_directory = $directory;
+	  }
+	}
+      }
+      if ($filecache_directory === FALSE) {
+	// This is serious
+	die('No filecache_directory and unability to setup default one.');
+      }
     }
-    // If enforcing a minimum cache lifetime, validate that the data is
-    // currently valid for this user before we return it by making sure the
-    // cache entry was created before the timestamp in the current session's
-    // cache timer. The cache variable is loaded into the $user object by
-    // sess_read() in session.inc.
-    else {
-      if ($user->cache > $cache->created) {
-        // This cache data is too old and thus not valid for us, ignore it.
-        return 0;
-      }
-      else {
-        $cache->data = db_decode_blob($cache->data);
-      }
+    //@todo Handle when filecache_directory is not set
+    //@todo Support custom prefix
+    $this->prefix = $filecache_directory .'/'. $bin .'-';
+  }
+
+  function get($cid) {
+    $filename = $this->prefix . md5($cid);
+
+    // Use @ because cache entry may not exist
+    $content = @file_get_contents($filename);
+    if ($content === FALSE) {
+      return FALSE;
+    }
+
+    $cache = unserialize($content);
+    if ($cache === FALSE) {
+      unlink($filename); // Remove broken cache entries
+      //dpm('Removed broken '.$bin.' '.$cid); 
+      return FALSE;
+    }
+
+    // XXX Should reproduce the cache_lifetime / cache_flush_$bin logic
+    $cache_flush = variable_get('filecache_flush_'. $this->bin, 0);
+    if ($cache->expire != CACHE_TEMPORARY && // XXX how to handle this?
+	$cache->expire != CACHE_PERMANENT &&
+	($cache->expire < REQUEST_TIME ||
+	 ($cache_flush && $cache->created < $cache_flush))) {
+      // XXX For now this is the only place where cache entries are removed
+      unlink($filename);
+      //dpm('Removed expired/flushed '.$bin.' '.$cid); 
+      return FALSE;
+    }
+
+    // Some systems don't update access time so we do it this way
+    // XXX There's a chance that file no longer exists at this point
+    // XXX but it's ok because we deal fine with broken cache entries
+    // XXX should check only once in a page request if we have such
+    // XXX filesystem and set $this->touch so that here we now what to do
+    // XXX should be configurable
+    //touch($filename);
+
+    if ($cache->cid != $cid) {
+      return FALSE;
     }
     return $cache;
   }
-  return 0;
-}
 
-/**
- * Store data in the persistent cache.
- *
- * The persistent cache is split up into four database
- * tables. Contributed modules can add additional tables.
- *
- * 'cache_page': This table stores generated pages for anonymous
- * users. This is the only table affected by the page cache setting on
- * the administrator panel.
- *
- * 'cache_menu': Stores the cachable part of the users' menus.
- *
- * 'cache_filter': Stores filtered pieces of content. This table is
- * periodically cleared of stale entries by cron.
- *
- * 'cache': Generic cache storage table.
- *
- * The reasons for having several tables are as follows:
- *
- * - smaller tables allow for faster selects and inserts
- * - we try to put fast changing cache items and rather static
- *   ones into different tables. The effect is that only the fast
- *   changing tables will need a lot of writes to disk. The more
- *   static tables will also be better cachable with MySQL's query cache
- *
- * @param $cid
- *   The cache ID of the data to store.
- * @param $table
- *   The table $table to store the data in. Valid core values are 'cache_filter',
- *   'cache_menu', 'cache_page', or 'cache'.
- * @param $data
- *   The data to store in the cache. Complex data types must be serialized first.
- * @param $expire
- *   One of the following values:
- *   - CACHE_PERMANENT: Indicates that the item should never be removed unless
- *     explicitly told to using cache_clear_all() with a cache ID.
- *   - CACHE_TEMPORARY: Indicates that the item should be removed at the next
- *     general cache wipe.
- *   - A Unix timestamp: Indicates that the item should be kept at least until
- *     the given time, after which it behaves like CACHE_TEMPORARY.
- * @param $headers
- *   A string containing HTTP header information for cached pages.
- */
-function cache_set($cid, $table = 'cache', $data, $expire = CACHE_PERMANENT, $headers = NULL) {
-  $cache = array(
-    'data' => $data,
-    'created' => time(),
-    'expire' => $expire,
-    'headers' => $headers,
-  );
-  $cache = serialize($cache);
-  $path = variable_get('filecache_path', 'files/cache'). '/'.$table;
-  if (!file_exists($path)) {
-    mkdir($path, 0775, TRUE);
-  }
-  if (file_exists($path) && is_dir($path)) {
-    $dest = $path .'/'. urlencode($cid);
-    file_put_contents($dest, $cache);
-  }
-}
-
-/**
- *
- * Expire data from the cache. If called without arguments, expirable
- * entries will be cleared from the cache_page table.
- *
- * @param $cid
- *   If set, the cache ID to delete. Otherwise, all cache entries that can
- *   expire are deleted.
- *
- * @param $table
- *   If set, the table $table to delete from. Mandatory
- *   argument if $cid is set.
- *
- * @param $wildcard
- *   If set to TRUE, the $cid is treated as a substring
- *   to match rather than a complete ID. The match is a right hand
- *   match. If '*' is given as $cid, the table $table will be emptied.
- */
-function cache_clear_all($cid = NULL, $table = NULL, $wildcard = FALSE) {
-  global $user;
-
-  $path = variable_get('filecache_path', 'files/cache'). '/'. $table;
-
-  if (!isset($cid) || !isset($table)) {
-    cache_clear_all('*', !isset($table) ? 'cache_page' : $table);
-    return;
-  }
-
-  if ($wildcard) {
-    if (file_exists($path) && is_dir($path) && ($dir = opendir($path))) {
-      if ($cid == '*') {
-        $reg = '.*';
-      }
-      else {
-        $reg = '^'. urlencode($cid);
-      }
-      while ($file = readdir($dir)) {
-        if (!in_array($file, array('.', '..')) && ereg($reg, $file) !== FALSE && !is_dir($path. '/'. $file)) {
-          unlink($path. '/'. $file);
-        }
+  function getMultiple(&$cids) {
+    $results = array();
+    foreach ($cids as $cid) {
+      $cache = $this->get($cid);
+      if ($cache !== FALSE) {
+	$results[$cid] = $cache;
+	unset($cids[$cid]);
       }
     }
+    return $results;
   }
-  elseif (file_exists($path .'/'. urlencode($cid))) {
-    unlink($path .'/'. urlencode($cid));
-  }
-}
 
+  function set($cid, $data, $expire = CACHE_PERMANENT) {
+    $filename = $this->prefix . md5($cid);
+
+    // Handle concurrent cache_set
+    $i = 0;
+    do {
+      $tmp_filename = $filename .'.'. $i .'.tmp';
+      $fh = fopen($tmp_filename, 'x');
+      $i++;
+    } while ($fh === FALSE);
+
+    $cache = new StdClass;
+    $cache->cid = $cid;
+    $cache->created = REQUEST_TIME;
+    $cache->expire = $expire;
+    $cache->data = $data;
+    fputs($fh, serialize($cache));
+    fclose($fh);
+
+    // It's OK if cache value is not available at some moment
+    @unlink($filename); // Use @ because $filename may not exist
+    rename($tmp_filename, $filename);
+  }
+
+  function clear($cid = NULL, $wildcard = FALSE) {
+    if (is_string($cid) && !$wildcard) {
+      $cid = array($cid);
+    }
+    if (is_array($cid)) {
+      foreach ($cid as $one_cid) {
+	$filename = $this->prefix . md5($one_cid);
+	@unlink($filename); // Use @ because $one_cid may not exist
+	//dpm('Remove '.$this->bin.' '.$one_cid);
+      }
+    } else {
+      // XXX This result of this is as $conf['cache_lifetime'] = 0
+      variable_set('filecache_flush_'. $this->bin, REQUEST_TIME);
+      //dpm('Set filecache_flush_'. $this->bin);
+    }
+  }
+
+  function isEmpty() {
+    // XXX Not really used in Drupal core, only in tests
+    return FALSE;
+  }
+
+}

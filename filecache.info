@@ -1,2 +1,4 @@
 name = "File Cache"
-description = "Cache all cachables item to the filesystem instead of to the database as per standard"
+description = "File cache backend"
+version = 7.x-1.x-dev
+core = 7.x
