@@ -1,1 +1,59 @@
 <?php
+
+define('FILECACHE_CRON_MAX_FILES', 100);
+
+function filecache_cron() {
+  $filecache_directory = variable_get('filecache_directory', FALSE);
+  if ($filecache_directory === FALSE) {
+    // Default directory, protected by Apache
+    if (strstr($_SERVER['SERVER_SOFTWARE'], 'Apache') !== FALSE) {
+      $filecache_directory = DRUPAL_ROOT .'/'. conf_path() . '/filecache';
+    }
+  }
+  if (!is_dir($filecache_directory)) {
+    return;
+  }
+
+  $cwd = getcwd();
+  chdir($filecache_directory);
+  $filenames = glob('*', GLOB_NOSORT);
+  if (is_array($filenames)) {
+    $mtime2filenames = array();
+    foreach ($filenames as $filename) {
+      $mtime = filemtime($filename);
+      if (!isset($mtime2filenames[$mtime])) {
+	$mtime2filenames[$mtime] = array();
+      }
+      $mtime2filenames[$mtime][] = $filename;
+    } // foreach $filename
+
+    $counter = FILECACHE_CRON_MAX_FILES;
+    ksort($mtime2filenames);
+    foreach ($mtime2filenames as $filenames) {
+      foreach ($filenames as $filename) {
+	if ($counter-- < 1) {
+	  break 2;
+	}
+	touch($filename); // skip this file in next cron run
+	$content = @file_get_contents($filename);
+	if ($content === FALSE) {
+	  unlink($filename);
+	  continue;
+	}
+	$cache = @unserialize($content);
+	if ($cache === FALSE) {
+	  unlink($filename);
+	  continue;
+	}
+	if ($cache->expire == CACHE_PERMANENT) {
+	  continue;
+	}
+	if ($cache->expire == CACHE_TEMPORARY ||
+	    $cache->expire < REQUEST_TIME) {
+	  unlink($filename);
+	}
+      } // foreach $filename
+    } // foreach $filenames
+  } // if is_array($filenames)
+  chdir($cwd);
+}
