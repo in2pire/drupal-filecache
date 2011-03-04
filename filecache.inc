@@ -1,28 +1,45 @@
 <?php
 
+function filecache_directory() {
+  $filecache_directory = variable_get('filecache_directory', FALSE);
+  if ($filecache_directory === FALSE) {
+    // Default directory for Apache only
+    if (strpos($_SERVER['SERVER_SOFTWARE'], 'Apache') === 0) {
+      $filecache_directory = DRUPAL_ROOT .'/'. conf_path() . '/filecache';
+    }
+  }
+  return $filecache_directory;
+}
+
 class DrupalFileCache implements DrupalCacheInterface {
 
   function __construct($bin) {
     $this->bin = $bin;
-    $filecache_directory = variable_get('filecache_directory', FALSE);
-    if ($filecache_directory === FALSE) {
-      // Default directory, protected by Apache
-      if (strstr($_SERVER['SERVER_SOFTWARE'], 'Apache') !== FALSE) {
-	$directory = DRUPAL_ROOT .'/'. conf_path() . '/filecache';
-	if (is_dir($directory) || mkdir($directory)) { // A bit of cleverness
-	  $htaccess = $directory . '/.htaccess';
-	  if (is_file($htaccess) ||
-	      file_put_contents($htaccess, "Order allow,deny\n") !== FALSE) {
-	    // Sucess in setting up protected filecache directory
-	    $filecache_directory = $directory;
+    $filecache_directory = filecache_directory();
+    if ($filecache_directory) {
+      // Configured but is everything OK?
+      if (is_dir($filecache_directory) || mkdir($filecache_directory)) {
+	$htaccess = $filecache_directory . '/.htaccess';
+	if (!file_exists($htaccess)) {
+	  // Directory is not protected. Try to protect it
+	  if (file_put_contents($htaccess, "Order allow,deny\n") === FALSE) {
+	    // Failure in protecting it. Abort
+	    $filecache_directory = FALSE;
 	  }
-	}
-      }
-      if ($filecache_directory === FALSE) {
-	// This is serious
-	die('No filecache_directory and unability to setup default one.');
+	} elseif (!is_file($htaccess)) {
+	  // Exists but it's not a regular file
+	  $filecache_directory = FALSE;
+	} // else $htaccess is a regular file and everything is OK
+      } else {
+	// Not a directory and mkdir failed
+	$filecache_directory = FALSE;
       }
     }
+    if ($filecache_directory === FALSE) {
+      // This is serious. We've already took responsibility for this bin
+      die('No filecache_directory and unability to setup default one.');
+    }
+
     //@todo Handle when filecache_directory is not set
     //@todo Support custom prefix
     $this->prefix = $filecache_directory .'/'. $bin .'-';
