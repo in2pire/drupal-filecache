@@ -1,10 +1,35 @@
-THIS SOFTWARE DOES NOT HAVE EVEN ALPHA VERSION. USE AT YOUR OWN RISK
-
 Introduction
 ------------
 
 This modules allows Drupal caches to be stored in files instead of
 storing in database.
+
+Comparison with other caching modules
+-------------------------------------
+
+memcache is the closest caching module. File Cache can be configured
+to use memory filesystem (e.g. /dev/shm in Debian) which is very close
+to what memcache do. File Cache can use network filesystems and this
+is another use case where memcache is traditionally used.
+
+apc can be used for cache bins too. If it's used for that purpose,
+it's usually only for some of the critical cache bins like cache and
+cache_bootstrap.
+
+boost generates caches of pages that are directly served by web
+server. File Cache can plug in regular Drupal page caching and provide
+very fast page caching but this still needs a bit of PHP to be
+executed. Database access can be avoided altogether though. See
+$conf['filecache_fast_pagecache'] below.
+
+Feedback
+--------
+
+Benchmark results in real scenarios are needed in comparison against
+memcache, apc and boost. If you have such experience, please share
+with File Cache maintainer 'ogi' (Ognyan Kulev). Numbers in
+comparison with memcache against File Cache on memory filesystem are
+especially important.
 
 Quick Installation
 ------------------
@@ -66,13 +91,23 @@ NOT IMPLEMENTED:
 Replacement for includes/session_inc
 ------------------------------------
 
+Using File Cache for storing sessions.
+
 BUGS
 ----
 
-cache_clear_all doesn't properly handle $wildcard=TRUE. wontfix?
+When switching back to DB/PostgreSQL back end, some DB locking
+occurs. Need to investigate.
 
 cache_clear_all ignores cache_lifetime.
 
+cache_clear_all doesn't properly handle $wildcard=TRUE. How to fix it?
+
 File Cache directory can grow indefinetely.
 
-Using flock will be faster.
+TODO
+----
+
+Using flock will be faster (for cache_set) and more reliable.
+
+Recommend using memory filesystem.
