@@ -2,7 +2,8 @@
 
 define('FILECACHE_CRON_MAX_FILES', 100);
 
-function filecache_cron() {
+// XXX should be in filecache.inc
+function filecache_directory() {
   $filecache_directory = variable_get('filecache_directory', FALSE);
   if ($filecache_directory === FALSE) {
     // Default directory, protected by Apache
@@ -11,21 +12,40 @@ function filecache_cron() {
     }
   }
   if (!is_dir($filecache_directory)) {
+    return FALSE;
+  }
+  return $filecache_directory;
+}
+
+function filecache_cron() {
+  // XXX must check if filecache.inc is included
+
+  $filecache_directory = filecache_directory();
+  if ($filecache_directory === FALSE) {
     return;
   }
 
+  // we don't want OS to parse file paths too much
   $cwd = getcwd();
   chdir($filecache_directory);
+
   $filenames = glob('*', GLOB_NOSORT);
   if (is_array($filenames)) {
     $mtime2filenames = array();
+    $cache_size = 0;
     foreach ($filenames as $filename) {
-      $mtime = filemtime($filename);
+      $stat = @stat($filename);
+      if ($stat === FALSE) {
+	continue;
+      }
+      $mtime = $stat['mtime'];
+      $cache_size += $stat['blocks'] >= 0 ? $stat['blocks']*512 : $stat['size'];
       if (!isset($mtime2filenames[$mtime])) {
 	$mtime2filenames[$mtime] = array();
       }
       $mtime2filenames[$mtime][] = $filename;
     } // foreach $filename
+    cache_set('filecache_space', array('cache_size' => $cache_size));
 
     $counter = FILECACHE_CRON_MAX_FILES;
     ksort($mtime2filenames);
@@ -55,5 +75,36 @@ function filecache_cron() {
       } // foreach $filename
     } // foreach $filenames
   } // if is_array($filenames)
+
   chdir($cwd);
 }
+
+function filecache_requirements($phase) {
+  $filecache_directory = filecache_directory();
+
+  $t = get_t();
+  $requirements = array('title' => $t('File Cache'));
+
+  // XXX must check for included filecache.inc
+  // XXX filecache.inc currently doesn't handle problems with
+  // $filecache_directory so this REQUIREMENT_ERROR never happens
+  // XXX Solution to these problems should be included under description key
+  $requirements['severity'] = $filecache_directory ? REQUIREMENT_OK : REQUIREMENT_ERROR;
+
+  $space = cache_get('filecache_space');
+  $cron_last = variable_get('cron_last');
+  $requirements['value'] = $filecache_directory;
+  if ($space) {
+    $requirements['value'] .=
+      $t(': !cache_size (!time ago)',
+	 array('!cache_size' => format_size($space->data['cache_size']),
+	       '!time' => format_interval(REQUEST_TIME - $cron_last),
+	       )
+	 );
+  } else {
+    $requirements['value'] .= $t(': No cache size info. Cron is not run.');
+  }
+
+  return array('filecache' => $requirements);
+}
+
