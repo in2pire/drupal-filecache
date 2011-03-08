@@ -42,23 +42,54 @@ class DrupalFileCache implements DrupalCacheInterface {
 
     //@todo Handle when filecache_directory is not set
     //@todo Support custom prefix
+    //@todo allow different prefix for cids
     $this->prefix = $filecache_directory .'/'. $bin .'-';
+    $this->prefix_cids = $this->prefix;
   }
 
   function get($cid) {
-    $filename = $this->prefix . md5($cid);
+    $md5 = md5($cid);
+    $filename = $this->prefix . $md5;
+    $filename_cids = $this->prefix_cids . $md5 . '.cids';
 
     // Use @ because cache entry may not exist
     $content = @file_get_contents($filename);
     if ($content === FALSE) {
       return FALSE;
     }
+    $multi_cache = @unserialize($content);
+    if ($multi_cache === FALSE) {
+      // we are in the middle of cache_set
+      $fh = fopen($filename, 'r');
+      if ($fh === FALSE) {
+	return FALSE;
+      }
+      if (flock($fh, LOCK_SH) === FALSE) {
+	fclose($fh);
+	return FALSE;
+      }
+      $multi_cache = @unserialize(@stream_get_contents($fh));
+      if ($multi_cache === FALSE ||
+	  flock($fh, LOCK_UN) === FALSE ||
+	  fclose($fh) === FALSE) {
+	unlink($filename); // remove broken file
+	unlink($filename_cids);
+	flock($fh, LOCK_UN);
+	fclose($fh);
+	return FALSE;
+      }
+    }
 
-    $cache = unserialize($content);
-    if ($cache === FALSE) {
-      unlink($filename); // Remove broken cache entries
-      //dpm('Removed broken '.$bin.' '.$cid); 
-      return FALSE;
+    if (is_object($multi_cache)) { // old alpha1 file format
+      if ($multi_cache->cid != $cid) {
+	return FALSE;
+      }
+      $cache =& $multi_cache;
+    } else {
+      if (!isset($multi_cache[$cid])) {
+	return FALSE;
+      }
+      $cache =& $multi_cache[$cid];
     }
 
     // XXX Should reproduce the cache_lifetime / cache_flush_$bin logic
@@ -69,6 +100,7 @@ class DrupalFileCache implements DrupalCacheInterface {
 	 ($cache_flush && $cache->created < $cache_flush))) {
       // XXX For now this is the only place where cache entries are removed
       unlink($filename);
+      unlink($filename_cids);
       //dpm('Removed expired/flushed '.$bin.' '.$cid); 
       return FALSE;
     }
@@ -100,27 +132,74 @@ class DrupalFileCache implements DrupalCacheInterface {
   }
 
   function set($cid, $data, $expire = CACHE_PERMANENT) {
-    $filename = $this->prefix . md5($cid);
+    $md5 = md5($cid);
+    $filename = $this->prefix . $md5;
+    $filename_cids = $this->prefix_cids . $md5 . '.cids';
 
-    // Handle concurrent cache_set
-    $i = 0;
-    do {
-      $tmp_filename = $filename .'.'. $i .'.tmp';
-      $fh = fopen($tmp_filename, 'x');
-      $i++;
-    } while ($fh === FALSE);
+    $fh = fopen($filename, 'c+b');
+    if ($fh === FALSE) {
+      // most likely permission error - report it as critical error
+      watchdog('filecache', 'Canot open %filename',
+	       array('%filename' => $filename), WATCHDOG_CRITICAL);
+      return;
+    }
+    if (flock($fh, LOCK_EX) === FALSE) {
+      fclose($fh);
+      return;
+    }
+    $fh_cids = fopen($filename_cids, 'c+b');
+    if ($fh_cids === FALSE) {
+      watchdog('filecache', 'Canot open %filename',
+	       array('%filename' => $filename_cids), WATCHDOG_CRITICAL);
+      flock($fh, LOCK_UN);
+      fclose($fh);
+      return;
+    }
+    $cids = explode("\n", @stream_get_contents($fh_cids));
+    if (is_array($cids) && (count($cids) != 1 || $cids[0] != $cid)) {
+      $multi_cache = unserialize(stream_get_contents($fh));
+      if ($multi_cache === FALSE) {
+	$multi_cache = array();
+      }
+      elseif (is_object($multi_cache)) { // alpha1 file format
+	$multi_cache = array($multi_cache->cid => $multi_cache);
+      }
+    } else {
+      $multi_cache = array();
+    }
 
     $cache = new StdClass;
     $cache->cid = $cid;
     $cache->created = REQUEST_TIME;
     $cache->expire = $expire;
     $cache->data = $data;
-    fputs($fh, serialize($cache));
-    fclose($fh);
+    $multi_cache[$cid] =& $cache;
 
-    // It's OK if cache value is not available at some moment
-    @unlink($filename); // Use @ because $filename may not exist
-    rename($tmp_filename, $filename);
+    if (ftruncate($fh_cids, 0) === FALSE ||
+	fwrite($fh_cids, implode("\n", array_keys($multi_cache))) === FALSE ||
+	fclose($fh_cids) === FALSE) {
+      // XXX should not happen -> cleanup
+      unlink($filename_cids);
+      unlink($filename);
+      fclose($fh_cids);
+      flock($fh, LOCK_UN);
+      fclose($fh);
+      return;
+    }
+
+    if (ftruncate($fh, 0) === FALSE ||
+	fwrite($fh, serialize($multi_cache)) === FALSE ||
+	flock($fh, LOCK_UN) === FALSE ||
+	fclose($fh) === FALSE) {
+      // XXX should not happen -> cleanup
+      unlink($filename_cids);
+      unlink($filename);
+      //fclose($fh_cids); -- already closed
+      flock($fh, LOCK_UN);
+      fclose($fh);
+      return;
+    }
+    
   }
 
   function clear($cid = NULL, $wildcard = FALSE) {
@@ -129,8 +208,11 @@ class DrupalFileCache implements DrupalCacheInterface {
     }
     if (is_array($cid)) {
       foreach ($cid as $one_cid) {
-	$filename = $this->prefix . md5($one_cid);
+	$md5 = md5($one_cid);
+	$filename = $this->prefix . $md5;
+	$filename_cids = $this->prefix_cids . $md5 . '.cids';
 	@unlink($filename); // Use @ because $one_cid may not exist
+	@unlink($filename_cids); // Use @ because $one_cid may not exist
 	//dpm('Remove '.$this->bin.' '.$one_cid);
       }
     } else {

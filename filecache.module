@@ -26,6 +26,9 @@ function filecache_cron() {
       if ($filename == '.htaccess') { // XXX perhaps glob(*) skips it?
 	continue;
       }
+      if (strpos($filename, '.cids') !== FALSE) { // XXX
+	continue;
+      }
       $stat = @stat($filename);
       if ($stat === FALSE) {
 	continue;
@@ -46,24 +49,33 @@ function filecache_cron() {
 	if ($counter-- < 1) {
 	  break 2;
 	}
+	$filename_cids = $filename . '.cids'; // XXX
 	touch($filename); // skip this file in next cron run
 	$content = @file_get_contents($filename);
 	if ($content === FALSE) {
 	  unlink($filename);
+	  unlink($filename_cids);
 	  continue;
 	}
-	$cache = @unserialize($content);
-	if ($cache === FALSE) {
+	$multi_cache = @unserialize($content);
+	if ($multi_cache === FALSE) {
 	  unlink($filename);
+	  unlink($filename_cids);
 	  continue;
+	} elseif (is_object($multi_cache)) { // alpha1 file format
+	  $multi_cache = array($multi_cache->cid => $multi_cache);
 	}
-	if ($cache->expire == CACHE_PERMANENT) {
-	  continue;
-	}
-	if ($cache->expire == CACHE_TEMPORARY ||
-	    $cache->expire < REQUEST_TIME) {
-	  unlink($filename);
-	}
+	foreach ($multi_cache as $cache) {
+	  if ($cache->expire == CACHE_PERMANENT) {
+	    continue;
+	  }
+	  if ($cache->expire == CACHE_TEMPORARY ||
+	      $cache->expire < REQUEST_TIME) {
+	    unlink($filename);
+	    unlink($filename_cids);
+	    break;
+	  }
+	} // foreach $cache
       } // foreach $filename
     } // foreach $filenames
   } // if is_array($filenames)
