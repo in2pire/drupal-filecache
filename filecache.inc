@@ -93,9 +93,7 @@ $conf['filecache_directory'] = '<em>YOURDIRECTORYPATH</em>';
     $filename_meta = $this->prefix_meta . $md5 . '.meta'; // needed for unlink()
 
     // XXX should be in getMultiple() and get() to call getMultiple()
-    if (! ($this->bin == 'cache' && $cid != 'variables')) { //XXX this is a hack XXX
-      $this->delete_flushed();
-    }
+    $this->delete_flushed();
 
     // Use @ because cache entry may not exist
     $content = @file_get_contents($filename);
@@ -370,6 +368,12 @@ $conf['filecache_directory'] = '<em>YOURDIRECTORYPATH</em>';
   }
 
   protected function delete_flushed() {
+    static $recursion = FALSE; // XXX how cache.inc survives this?
+    if ($recursion) {
+      return;
+    }
+    $recursion = TRUE;
+
     // Garbage collection necessary when enforcing a minimum cache lifetime.
     $cache_flush = variable_get('cache_flush_' . $this->bin, 0);
     if ($cache_flush && ($cache_flush + variable_get('cache_lifetime', 0) <= REQUEST_TIME)) {
@@ -389,6 +393,8 @@ $conf['filecache_directory'] = '<em>YOURDIRECTORYPATH</em>';
 	}
       }
     }
+
+    $recursion = FALSE;
   }
 
   protected function delete_wildcard($cid_prefix) {
