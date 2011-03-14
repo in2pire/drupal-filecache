@@ -44,13 +44,13 @@ class DrupalFileCache implements DrupalCacheInterface {
     //@todo Support custom prefix
     //@todo allow different prefix for cids
     $this->prefix = $filecache_directory .'/'. $bin .'-';
-    $this->prefix_cids = $this->prefix;
+    $this->prefix_meta = $this->prefix;
   }
 
   function get($cid) {
     $md5 = md5($cid);
     $filename = $this->prefix . $md5;
-    $filename_cids = $this->prefix_cids . $md5 . '.cids';
+    $filename_meta = $this->prefix_meta . $md5 . '.meta';
 
     // Use @ because cache entry may not exist
     $content = @file_get_contents($filename);
@@ -73,7 +73,7 @@ class DrupalFileCache implements DrupalCacheInterface {
 	  flock($fh, LOCK_UN) === FALSE ||
 	  fclose($fh) === FALSE) {
 	unlink($filename); // remove broken file
-	unlink($filename_cids);
+	unlink($filename_meta);
 	flock($fh, LOCK_UN);
 	fclose($fh);
 	return FALSE;
@@ -100,7 +100,7 @@ class DrupalFileCache implements DrupalCacheInterface {
 	 ($cache_flush && $cache->created < $cache_flush))) {
       // XXX For now this is the only place where cache entries are removed
       unlink($filename);
-      unlink($filename_cids);
+      unlink($filename_meta);
       //dpm('Removed expired/flushed '.$bin.' '.$cid); 
       return FALSE;
     }
@@ -134,7 +134,7 @@ class DrupalFileCache implements DrupalCacheInterface {
   function set($cid, $data, $expire = CACHE_PERMANENT) {
     $md5 = md5($cid);
     $filename = $this->prefix . $md5;
-    $filename_cids = $this->prefix_cids . $md5 . '.cids';
+    $filename_meta = $this->prefix_meta . $md5 . '.meta';
 
     $fh = fopen($filename, 'c+b');
     if ($fh === FALSE) {
@@ -147,16 +147,16 @@ class DrupalFileCache implements DrupalCacheInterface {
       fclose($fh);
       return;
     }
-    $fh_cids = fopen($filename_cids, 'c+b');
-    if ($fh_cids === FALSE) {
+    $fh_meta = fopen($filename_meta, 'c+b');
+    if ($fh_meta === FALSE) {
       watchdog('filecache', 'Canot open %filename',
-	       array('%filename' => $filename_cids), WATCHDOG_CRITICAL);
+	       array('%filename' => $filename_meta), WATCHDOG_CRITICAL);
       flock($fh, LOCK_UN);
       fclose($fh);
       return;
     }
-    $cids = explode("\n", @stream_get_contents($fh_cids));
-    if (is_array($cids) && (count($cids) != 1 || $cids[0] != $cid)) {
+    $meta = explode("\n", @stream_get_contents($fh_meta));
+    if (is_array($meta) && (count($meta) != 1 || $meta[0] != $cid)) {
       $multi_cache = unserialize(stream_get_contents($fh));
       if ($multi_cache === FALSE) {
 	$multi_cache = array();
@@ -175,13 +175,13 @@ class DrupalFileCache implements DrupalCacheInterface {
     $cache->data = $data;
     $multi_cache[$cid] =& $cache;
 
-    if (ftruncate($fh_cids, 0) === FALSE ||
-	fwrite($fh_cids, implode("\n", array_keys($multi_cache))) === FALSE ||
-	fclose($fh_cids) === FALSE) {
+    if (ftruncate($fh_meta, 0) === FALSE ||
+	fwrite($fh_meta, implode("\n", array_keys($multi_cache))) === FALSE ||
+	fclose($fh_meta) === FALSE) {
       // XXX should not happen -> cleanup
-      unlink($filename_cids);
+      unlink($filename_meta);
       unlink($filename);
-      fclose($fh_cids);
+      fclose($fh_meta);
       flock($fh, LOCK_UN);
       fclose($fh);
       return;
@@ -192,9 +192,9 @@ class DrupalFileCache implements DrupalCacheInterface {
 	flock($fh, LOCK_UN) === FALSE ||
 	fclose($fh) === FALSE) {
       // XXX should not happen -> cleanup
-      unlink($filename_cids);
+      unlink($filename_meta);
       unlink($filename);
-      //fclose($fh_cids); -- already closed
+      //fclose($fh_meta); -- already closed
       flock($fh, LOCK_UN);
       fclose($fh);
       return;
@@ -210,9 +210,9 @@ class DrupalFileCache implements DrupalCacheInterface {
       foreach ($cid as $one_cid) {
 	$md5 = md5($one_cid);
 	$filename = $this->prefix . $md5;
-	$filename_cids = $this->prefix_cids . $md5 . '.cids';
+	$filename_meta = $this->prefix_meta . $md5 . '.meta';
 	@unlink($filename); // Use @ because $one_cid may not exist
-	@unlink($filename_cids); // Use @ because $one_cid may not exist
+	@unlink($filename_meta); // Use @ because $one_cid may not exist
 	//dpm('Remove '.$this->bin.' '.$one_cid);
       }
     } else {

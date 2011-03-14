@@ -26,7 +26,7 @@ function filecache_cron() {
       if ($filename == '.htaccess') { // XXX perhaps glob(*) skips it?
 	continue;
       }
-      if (strpos($filename, '.cids') !== FALSE) { // XXX
+      if (strpos($filename, '.meta') !== FALSE) { // XXX
 	continue;
       }
       $stat = @stat($filename);
@@ -49,18 +49,18 @@ function filecache_cron() {
 	if ($counter-- < 1) {
 	  break 2;
 	}
-	$filename_cids = $filename . '.cids'; // XXX
+	$filename_meta = $filename . '.meta'; // XXX
 	touch($filename); // skip this file in next cron run
 	$content = @file_get_contents($filename);
 	if ($content === FALSE) {
 	  unlink($filename);
-	  unlink($filename_cids);
+	  unlink($filename_meta);
 	  continue;
 	}
 	$multi_cache = @unserialize($content);
 	if ($multi_cache === FALSE) {
 	  unlink($filename);
-	  unlink($filename_cids);
+	  unlink($filename_meta);
 	  continue;
 	} elseif (is_object($multi_cache)) { // alpha1 file format
 	  $multi_cache = array($multi_cache->cid => $multi_cache);
@@ -72,7 +72,7 @@ function filecache_cron() {
 	  if ($cache->expire == CACHE_TEMPORARY ||
 	      $cache->expire < REQUEST_TIME) {
 	    unlink($filename);
-	    unlink($filename_cids);
+	    unlink($filename_meta);
 	    break;
 	  }
 	} // foreach $cache
