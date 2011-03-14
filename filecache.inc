@@ -42,7 +42,7 @@ class DrupalFileCache implements DrupalCacheInterface {
 
     //@todo Handle when filecache_directory is not set
     //@todo Support custom prefix
-    //@todo allow different prefix for cids
+    //@todo allow different prefix for meta
     $this->prefix = $filecache_directory .'/'. $bin .'-';
     $this->prefix_meta = $this->prefix;
   }
@@ -50,7 +50,12 @@ class DrupalFileCache implements DrupalCacheInterface {
   function get($cid) {
     $md5 = md5($cid);
     $filename = $this->prefix . $md5;
-    $filename_meta = $this->prefix_meta . $md5 . '.meta';
+    $filename_meta = $this->prefix_meta . $md5 . '.meta'; // needed for unlink()
+
+    // XXX should be in getMultiple() and get() to call getMultiple()
+    if (! ($this->bin == 'cache' && $cid != 'variables')) { //XXX this is a hack XXX
+      $this->delete_flushed();
+    }
 
     // Use @ because cache entry may not exist
     $content = @file_get_contents($filename);
@@ -60,7 +65,7 @@ class DrupalFileCache implements DrupalCacheInterface {
     $multi_cache = @unserialize($content);
     if ($multi_cache === FALSE) {
       // we are in the middle of cache_set
-      $fh = fopen($filename, 'r');
+      $fh = fopen($filename, 'rb');
       if ($fh === FALSE) {
 	return FALSE;
       }
@@ -98,7 +103,6 @@ class DrupalFileCache implements DrupalCacheInterface {
 	$cache->expire != CACHE_PERMANENT &&
 	($cache->expire < REQUEST_TIME ||
 	 ($cache_flush && $cache->created < $cache_flush))) {
-      // XXX For now this is the only place where cache entries are removed
       unlink($filename);
       unlink($filename_meta);
       //dpm('Removed expired/flushed '.$bin.' '.$cid); 
@@ -156,9 +160,10 @@ class DrupalFileCache implements DrupalCacheInterface {
       return;
     }
     $meta = explode("\n", @stream_get_contents($fh_meta));
-    if (is_array($meta) && (count($meta) != 1 || $meta[0] != $cid)) {
+    if (! (is_array($meta) && count($meta) == 3 && $meta[1] == $cid)) {
+      // we need to read cache file
       $multi_cache = unserialize(stream_get_contents($fh));
-      if ($multi_cache === FALSE) {
+      if ($multi_cache === FALSE) { // XXX should not happen - what to do?
 	$multi_cache = array();
       }
       elseif (is_object($multi_cache)) { // alpha1 file format
@@ -175,8 +180,16 @@ class DrupalFileCache implements DrupalCacheInterface {
     $cache->data = $data;
     $multi_cache[$cid] =& $cache;
 
+    // rebuild $meta
+    $meta = array();
+    $meta[] = count($multi_cache);
+    foreach ($multi_cache as $cache) {
+      $meta[] = $cache->cid;
+      $meta[] = $cache->expire;
+    }
+
     if (ftruncate($fh_meta, 0) === FALSE ||
-	fwrite($fh_meta, implode("\n", array_keys($multi_cache))) === FALSE ||
+	fwrite($fh_meta, implode("\n", $meta)) === FALSE ||
 	fclose($fh_meta) === FALSE) {
       // XXX should not happen -> cleanup
       unlink($filename_meta);
@@ -203,28 +216,158 @@ class DrupalFileCache implements DrupalCacheInterface {
   }
 
   function clear($cid = NULL, $wildcard = FALSE) {
-    if (is_string($cid) && !$wildcard) {
-      $cid = array($cid);
-    }
-    if (is_array($cid)) {
-      foreach ($cid as $one_cid) {
-	$md5 = md5($one_cid);
-	$filename = $this->prefix . $md5;
-	$filename_meta = $this->prefix_meta . $md5 . '.meta';
-	@unlink($filename); // Use @ because $one_cid may not exist
-	@unlink($filename_meta); // Use @ because $one_cid may not exist
-	//dpm('Remove '.$this->bin.' '.$one_cid);
+    global $user;
+
+    // parts are shamelessy copied from includes/cache.inc
+
+    if (empty($cid)) {
+      if (variable_get('cache_lifetime', 0)) {
+        // We store the time in the current user's $user->cache variable which
+        // will be saved into the sessions bin by _drupal_session_write(). We then
+        // simulate that the cache was flushed for this user by not returning
+        // cached data that was cached before the timestamp.
+        $user->cache = REQUEST_TIME;
+
+        $cache_flush = variable_get('cache_flush_' . $this->bin, 0);
+        if ($cache_flush == 0) {
+          // This is the first request to clear the cache, start a timer.
+          variable_set('cache_flush_' . $this->bin, REQUEST_TIME);
+        }
+        elseif (REQUEST_TIME > ($cache_flush + variable_get('cache_lifetime', 0))) {
+          // Clear the cache for everyone, cache_lifetime seconds have
+          // passed since the first request to clear the cache.
+	  $this->delete_expired();
+          variable_set('cache_flush_' . $this->bin, 0);
+        }
       }
-    } else {
-      // XXX This result of this is as $conf['cache_lifetime'] = 0
-      variable_set('filecache_flush_'. $this->bin, REQUEST_TIME);
-      //dpm('Set filecache_flush_'. $this->bin);
+      else {
+        // No minimum cache lifetime, flush all temporary cache entries now.
+	$this->delete_expired();
+      }
+    }
+    else {
+      if ($wildcard) {
+        if ($cid == '*') {
+	  $this->delete_all();
+        }
+        else {
+	  $this->delete_wildcard($cid);
+        }
+      }
+      elseif (is_array($cid)) {
+        // Delete in chunks when a large array is passed.
+	foreach ($cid as $one_cid) {
+	  $this->delete_one($one_cid);
+	}
+      }
+      else {
+	$this->delete_one($cid);
+      }
+    }
+  }
+
+  protected function delete_all() {
+    foreach (glob($this->prefix . '*.meta', GLOB_NOSORT) as $filename) { //XXX on error?
+      $filename_meta = $filename . '.meta'; //XXX assumes prefix == prefix_meta
+      
+      // XXX is order important here?
+      @unlink($filename);
+      @unlink($filename_meta);
+    }
+  }
+
+  protected function delete_one($cid) {
+    $md5 = md5($cid);
+    $filename = $this->prefix . $md5;
+    $filename_meta = $this->prefix_meta . $md5 . '.meta';
+
+    // XXX is order important here?
+    @unlink($filename);
+    @unlink($filename_meta);
+  }
+
+  // helper function, $return[$filename][$cid] = $expire
+  protected function glob_meta() {
+    $result = array();
+    foreach (glob($this->prefix_meta . '*.meta', GLOB_NOSORT) as $filename_meta) { //XXX on error?
+      $meta_content = @file_get_contents($filename_meta);
+      if ($meta_content === FALSE) {
+	continue; // XXX should rebuild?
+      }
+      $meta = explode("\n", $meta_content);
+      if (!is_array($meta) ||
+	  count($meta) % 2 != 1 || // 1 line for count + 2 lines for each (cid,expire)
+	  strval(intval($meta[0])) != $meta[0] || // first line must be int
+	  intval($meta[0]) * 2 + 1 != count($meta)) { // see above
+	continue; // XXX should rebuild?
+      }
+      $filename = preg_replace('/\.meta$/', '', $filename_meta);
+      $result[$filename] = array();
+      for ($i = 1; $i < count($meta); $i += 2) {
+	// $result[$filename][$cid] = $expire
+	$result[$filename][$meta[$i]] = intval($meta[$i+1]);
+      }
+    }
+    return $result;
+  }
+
+  protected function delete_expired() {
+    foreach ($this->glob_meta() as $filename => $cids) {
+      $filename_meta = $filename . '.meta'; //XXX assumes prefix == prefix_meta
+      foreach ($cids as $cid => $expire) {
+	if ($expire == CACHE_PERMANENT) {
+	  continue;
+	}
+	if ($expire == CACHE_TEMPORARY ||
+	    $expire < REQUEST_TIME) {
+	  //XXX is order important?
+	  @unlink($filename);
+	  @unlink($filename_meta);
+	  break;
+	}
+      }
+    }
+  }
+
+  protected function delete_flushed() {
+    // Garbage collection necessary when enforcing a minimum cache lifetime.
+    $cache_flush = variable_get('cache_flush_' . $this->bin, 0);
+    if ($cache_flush && ($cache_flush + variable_get('cache_lifetime', 0) <= REQUEST_TIME)) {
+      // Reset the variable immediately to prevent a meltdown in heavy load situations.
+      variable_set('cache_flush_' . $this->bin, 0);
+      // Time to flush old cache data
+      foreach ($this->glob_meta() as $filename => $cids) {
+	$filename_meta = $filename . '.meta'; //XXX assumes prefix == prefix_meta
+	foreach ($cids as $cid => $expire) {
+	  if ($expire != CACHE_PERMANENT &&
+	      $expire <= $cache_flush) {
+	    //XXX is order important?
+	    @unlink($filename);
+	    @unlink($filename_meta);
+	    break;
+	  }
+	}
+      }
+    }
+  }
+
+  protected function delete_wildcard($cid_prefix) {
+    foreach ($this->glob_meta() as $filename => $cids) {
+      $filename_meta = $filename . '.meta'; //XXX assumes prefix == prefix_meta
+      foreach ($cids as $cid => $expire) {
+	if (strpos($cid, $cid_prefix) === 0) { //XXX could be more optimized
+	  //XXX is order important?
+	  @unlink($filename);
+	  @unlink($filename_meta);
+	  break;
+	}
+      }
     }
   }
 
   function isEmpty() {
-    // XXX Not really used in Drupal core, only in tests
-    return FALSE;
+    return count($this->glob_meta()) == 0;
   }
 
 }
+

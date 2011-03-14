@@ -18,7 +18,7 @@ function filecache_cron() {
   $cwd = getcwd();
   chdir($filecache_directory);
 
-  $filenames = glob('*', GLOB_NOSORT);
+  $filenames = glob('*', GLOB_NOSORT); // XXX should use opendir, ...
   if (is_array($filenames)) {
     $mtime2filenames = array();
     $cache_size = 0;
@@ -26,7 +26,7 @@ function filecache_cron() {
       if ($filename == '.htaccess') { // XXX perhaps glob(*) skips it?
 	continue;
       }
-      if (strpos($filename, '.meta') !== FALSE) { // XXX
+      if (strpos($filename, '.meta') !== FALSE) { // XXX skip meta:s
 	continue;
       }
       $stat = @stat($filename);
@@ -49,38 +49,45 @@ function filecache_cron() {
 	if ($counter-- < 1) {
 	  break 2;
 	}
-	$filename_meta = $filename . '.meta'; // XXX
+	$filename_meta = $filename . '.meta'; // XXX must use filecache_directory_meta
 	touch($filename); // skip this file in next cron run
-	$content = @file_get_contents($filename);
-	if ($content === FALSE) {
-	  unlink($filename);
-	  unlink($filename_meta);
+	$content_meta = @file_get_contents($filename_meta);
+	if ($content_meta === FALSE) {
+	  // XXX should rebuild .meta
 	  continue;
 	}
-	$multi_cache = @unserialize($content);
-	if ($multi_cache === FALSE) {
-	  unlink($filename);
-	  unlink($filename_meta);
+	$meta = explode("\n", $content_meta);
+	if (!is_array($meta) ||
+	    count($meta) % 2 != 1 || // 1 line for count + 2 lines for each (cid,expire)
+	    strval(intval($meta[0])) != $meta[0] || // first line must be int
+	    intval($meta[0]) * 2 + 1 != count($meta)) { // see above
+	  // XXX should rebuild .meta
+	  dpm('should rebuild .meta');
+	  dpm($meta);
 	  continue;
-	} elseif (is_object($multi_cache)) { // alpha1 file format
-	  $multi_cache = array($multi_cache->cid => $multi_cache);
 	}
-	foreach ($multi_cache as $cache) {
-	  if ($cache->expire == CACHE_PERMANENT) {
+	for ($i = 1; $i < count($meta); $i += 2) {
+	  $expire = intval($meta[$i+1]);
+	  if (strval($expire) != $meta[$i+1]) {
+	    // XXX should rebuild .meta
+	    break;
+	  }
+	  if ($expire == CACHE_PERMANENT) {
 	    continue;
 	  }
-	  if ($cache->expire == CACHE_TEMPORARY ||
-	      $cache->expire < REQUEST_TIME) {
+	  if ($expire == CACHE_TEMPORARY ||
+	      $expire < REQUEST_TIME) {
+	    // XXX is order important?
 	    unlink($filename);
 	    unlink($filename_meta);
 	    break;
 	  }
-	} // foreach $cache
+	} // foreach $meta[$i], $i+=2
       } // foreach $filename
     } // foreach $filenames
   } // if is_array($filenames)
 
-  chdir($cwd);
+  chdir($cwd); // return back to original directory
 }
 
 function filecache_requirements($phase) {
