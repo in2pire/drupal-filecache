@@ -37,7 +37,47 @@ class DrupalFileCache implements DrupalCacheInterface {
     }
     if ($filecache_directory === FALSE) {
       // This is serious. We've already took responsibility for this bin
-      die('No filecache_directory and unability to setup default one.');
+      $filecache_directory = filecache_directory();
+      if ($filecache_directory === FALSE) {
+?>
+<p><strong>No filecache_directory and cannot setup default one because you are not running Apache.</strong></p>
+
+<p>Please follow these steps:</p>
+<ol>
+<li>Make directory for <em>File Cache</em> that is writable by PHP (user <em><?php print get_current_user() ?></em>)</li>
+<li>Add the following line to <em><?php print conf_path() . '/settings.php' ?></em>:
+<pre>
+$conf['filecache_directory'] = '<em>YOURDIRECTORYPATH</em>';
+</pre></li>
+</ol>
+<?php
+      } else {
+	$filecache_directory = $conf_path . '/filecache';
+?>
+<p><strong>No filecache_directory and cannot setup default one for Apache.</strong></p>
+
+<p>This is probably due to permission problem. There are two ways to resolve this.</p>
+
+<ul>
+
+<li>If you want to use default directory protected by Apache, run these commands as root:
+<pre>
+mkdir <?php print $filecache_directory ?>
+chown <?php print get_current_user() ?>: <?php print $filecache_directory ?>
+</pre>
+</li>
+
+<li>If you want to use another directory, make sure it's writable by PHP (user <em><?php print get_current_user() ?></em>) and add the following line to <em><?php print conf_path() . '/settings.php' ?></em>:
+<pre>
+$conf['filecache_directory'] = '<em>YOURDIRECTORYPATH</em>';
+</pre>
+</li>
+
+</ul>
+
+<?php
+      }
+      die();
     }
 
     //@todo Handle when filecache_directory is not set
