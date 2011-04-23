@@ -14,77 +14,32 @@ function filecache_cron() {
     return;
   }
 
-  // we don't want OS to parse file paths too much
+  // XXX just adapted from DrupalFileCache::delete_expired()
+
   $cwd = getcwd();
-  chdir($filecache_directory);
-
-  $filenames = glob('*', GLOB_NOSORT); // XXX should use opendir, ...
-  if (is_array($filenames)) {
-    $mtime2filenames = array();
-    $cache_size = 0;
-    foreach ($filenames as $filename) {
-      if (strpos($filename, '.meta') !== FALSE) { // XXX skip meta:s
-	continue;
-      }
-      $stat = @stat($filename);
-      if ($stat === FALSE) {
-	continue;
-      }
-      $mtime = $stat['mtime'];
-      $cache_size += $stat['blocks'] >= 0 ? $stat['blocks']*512 : $stat['size'];
-      if (!isset($mtime2filenames[$mtime])) {
-	$mtime2filenames[$mtime] = array();
-      }
-      $mtime2filenames[$mtime][] = $filename;
-    } // foreach $filename
-    cache_set('filecache_space', array('cache_size' => $cache_size));
-
-    $counter = FILECACHE_CRON_MAX_FILES;
-    ksort($mtime2filenames);
-    foreach ($mtime2filenames as $filenames) {
-      foreach ($filenames as $filename) {
-	if ($counter-- < 1) {
-	  break 2;
-	}
-	$filename_meta = $filename . '.meta'; // XXX must use filecache_directory_meta
-	touch($filename); // skip this file in next cron run
-	$content_meta = @file_get_contents($filename_meta);
-	if ($content_meta === FALSE) {
-	  // XXX should rebuild .meta
-	  continue;
-	}
-	$meta = explode("\n", $content_meta);
-	if (!is_array($meta) ||
-	    count($meta) % 2 != 1 || // 1 line for count + 2 lines for each (cid,expire)
-	    strval(intval($meta[0])) != $meta[0] || // first line must be int
-	    intval($meta[0]) * 2 + 1 != count($meta)) { // see above
-	  // XXX should rebuild .meta
-	  dpm('should rebuild .meta');
-	  dpm($meta);
-	  continue;
-	}
-	for ($i = 1; $i < count($meta); $i += 2) {
-	  $expire = intval($meta[$i+1]);
-	  if (strval($expire) != $meta[$i+1]) {
-	    // XXX should rebuild .meta
-	    break;
-	  }
-	  if ($expire == CACHE_PERMANENT) {
-	    continue;
-	  }
-	  if ($expire == CACHE_TEMPORARY ||
-	      $expire < REQUEST_TIME) {
-	    // XXX is order important?
-	    unlink($filename);
-	    unlink($filename_meta);
-	    break;
-	  }
-	} // foreach $meta[$i], $i+=2
-      } // foreach $filename
-    } // foreach $filenames
-  } // if is_array($filenames)
-
-  chdir($cwd); // return back to original directory
+  chdir($this->directory);
+  $dh = opendir('.');
+  while (($filename = readdir($dh)) !== FALSE) {
+    // XXX this tries to read every file regardless if it's cache entry
+    // XXX reads all entries XXX
+    $content = @file_get_contents($filename);
+    if ($content === FALSE) {
+      continue;
+    }
+    $cache = @unserialize($content);
+    if ($content === FALSE) {
+      continue;
+    }
+    if ($cache->expire == CACHE_PERMANENT) {
+      continue;
+    }
+    if ($cache->expire == CACHE_TEMPORARY ||
+	$cache->expire < REQUEST_TIME) {
+      @unlink($filename);
+    }
+  } // foreach $filename
+  close($dh);
+  chdir($cwd);
 }
 
 function filecache_requirements($phase) {

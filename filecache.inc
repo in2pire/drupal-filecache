@@ -1,5 +1,9 @@
 <?php
 
+function filecache_urlencode($matches) {
+  return urlencode($matches[0]);
+}
+
 function filecache_directory() {
   $filecache_directory = variable_get('filecache_directory', FALSE);
   if ($filecache_directory === FALSE) {
@@ -45,15 +49,21 @@ class DrupalFileCache implements DrupalCacheInterface {
     }
 
     //@todo Support custom prefix
-    //@todo allow different prefix for meta
-    $this->prefix = $filecache_directory .'/'. $bin .'-';
-    $this->prefix_meta = $this->prefix;
+    $this->directory = $filecache_directory;
+    $this->prefix = $this->directory .'/'. $bin .'-';
+  }
+
+  function encode_cid($cid) {
+    // urlencode is run only for %, /, control or non-ASCII character
+    return preg_replace_callback('/[^ -$&-.0-~]/', 'filecache_urlencode', $cid);
+  }
+
+  function decode_cid($filename) {
+    return urldecode($filename);
   }
 
   function get($cid) {
-    $md5 = md5($cid);
-    $filename = $this->prefix . $md5;
-    $filename_meta = $this->prefix_meta . $md5 . '.meta'; // needed for unlink()
+    $filename = $this->prefix . $this->encode_cid($cid);
 
     // XXX should be in getMultiple() and get() to call getMultiple()
     $this->delete_flushed();
@@ -63,8 +73,8 @@ class DrupalFileCache implements DrupalCacheInterface {
     if ($content === FALSE) {
       return FALSE;
     }
-    $multi_cache = @unserialize($content);
-    if ($multi_cache === FALSE) {
+    $cache = @unserialize($content);
+    if ($cache === FALSE) {
       // we are in the middle of cache_set
       $fh = fopen($filename, 'rb');
       if ($fh === FALSE) {
@@ -74,28 +84,15 @@ class DrupalFileCache implements DrupalCacheInterface {
 	fclose($fh);
 	return FALSE;
       }
-      $multi_cache = @unserialize(@stream_get_contents($fh));
-      if ($multi_cache === FALSE ||
+      $cache = @unserialize(@stream_get_contents($fh));
+      if ($cache === FALSE ||
 	  flock($fh, LOCK_UN) === FALSE ||
 	  fclose($fh) === FALSE) {
 	unlink($filename); // remove broken file
-	unlink($filename_meta);
 	flock($fh, LOCK_UN);
 	fclose($fh);
 	return FALSE;
       }
-    }
-
-    if (is_object($multi_cache)) { // old alpha1 file format
-      if ($multi_cache->cid != $cid) {
-	return FALSE;
-      }
-      $cache =& $multi_cache;
-    } else {
-      if (!isset($multi_cache[$cid])) {
-	return FALSE;
-      }
-      $cache =& $multi_cache[$cid];
     }
 
     // XXX Should reproduce the cache_lifetime / cache_flush_$bin logic
@@ -105,7 +102,6 @@ class DrupalFileCache implements DrupalCacheInterface {
 	($cache->expire < REQUEST_TIME ||
 	 ($cache_flush && $cache->created < $cache_flush))) {
       unlink($filename);
-      unlink($filename_meta);
       //dpm('Removed expired/flushed '.$bin.' '.$cid); 
       return FALSE;
     }
@@ -118,9 +114,8 @@ class DrupalFileCache implements DrupalCacheInterface {
     // XXX should be configurable
     //touch($filename);
 
-    if ($cache->cid != $cid) {
-      return FALSE;
-    }
+    // XXX should assert($cache->cid == $cid)
+
     return $cache;
   }
 
@@ -137,9 +132,7 @@ class DrupalFileCache implements DrupalCacheInterface {
   }
 
   function set($cid, $data, $expire = CACHE_PERMANENT) {
-    $md5 = md5($cid);
-    $filename = $this->prefix . $md5;
-    $filename_meta = $this->prefix_meta . $md5 . '.meta';
+    $filename = $this->prefix . $this->encode_cid($cid);
 
     $fh = fopen($filename, 'c+b');
     if ($fh === FALSE) {
@@ -152,68 +145,23 @@ class DrupalFileCache implements DrupalCacheInterface {
       fclose($fh);
       return;
     }
-    $fh_meta = fopen($filename_meta, 'c+b');
-    if ($fh_meta === FALSE) {
-      watchdog('filecache', 'Canot open %filename',
-	       array('%filename' => $filename_meta), WATCHDOG_CRITICAL);
-      flock($fh, LOCK_UN);
-      fclose($fh);
-      return;
-    }
-    $meta = explode("\n", @stream_get_contents($fh_meta));
-    if (! (is_array($meta) && count($meta) == 3 && $meta[1] == $cid)) {
-      // we need to read cache file
-      $multi_cache = unserialize(stream_get_contents($fh));
-      if ($multi_cache === FALSE) { // XXX should not happen - what to do?
-	$multi_cache = array();
-      }
-      elseif (is_object($multi_cache)) { // alpha1 file format
-	$multi_cache = array($multi_cache->cid => $multi_cache);
-      }
-    } else {
-      $multi_cache = array();
-    }
 
     $cache = new StdClass;
     $cache->cid = $cid;
     $cache->created = REQUEST_TIME;
     $cache->expire = $expire;
     $cache->data = $data;
-    $multi_cache[$cid] =& $cache;
-
-    // rebuild $meta
-    $meta = array();
-    $meta[] = count($multi_cache);
-    foreach ($multi_cache as $cache) {
-      $meta[] = $cache->cid;
-      $meta[] = $cache->expire;
-    }
-
-    if (ftruncate($fh_meta, 0) === FALSE ||
-	fwrite($fh_meta, implode("\n", $meta)) === FALSE ||
-	fclose($fh_meta) === FALSE) {
-      // XXX should not happen -> cleanup
-      unlink($filename_meta);
-      unlink($filename);
-      fclose($fh_meta);
-      flock($fh, LOCK_UN);
-      fclose($fh);
-      return;
-    }
 
     if (ftruncate($fh, 0) === FALSE ||
-	fwrite($fh, serialize($multi_cache)) === FALSE ||
+	fwrite($fh, serialize($cache)) === FALSE ||
 	flock($fh, LOCK_UN) === FALSE ||
 	fclose($fh) === FALSE) {
       // XXX should not happen -> cleanup
-      unlink($filename_meta);
       unlink($filename);
-      //fclose($fh_meta); -- already closed
       flock($fh, LOCK_UN);
       fclose($fh);
       return;
     }
-    
   }
 
   function clear($cid = NULL, $wildcard = FALSE) {
@@ -249,14 +197,13 @@ class DrupalFileCache implements DrupalCacheInterface {
     else {
       if ($wildcard) {
         if ($cid == '*') {
-	  $this->delete_all();
+	  $this->delete_wildcard('');
         }
         else {
 	  $this->delete_wildcard($cid);
         }
       }
       elseif (is_array($cid)) {
-        // Delete in chunks when a large array is passed.
 	foreach ($cid as $one_cid) {
 	  $this->delete_one($one_cid);
 	}
@@ -267,67 +214,56 @@ class DrupalFileCache implements DrupalCacheInterface {
     }
   }
 
-  protected function delete_all() {
-    foreach (glob($this->prefix . '*.meta', GLOB_NOSORT) as $filename) { //XXX on error?
-      $filename_meta = $filename . '.meta'; //XXX assumes prefix == prefix_meta
-      
-      // XXX is order important here?
-      @unlink($filename);
-      @unlink($filename_meta);
-    }
-  }
-
   protected function delete_one($cid) {
-    $md5 = md5($cid);
-    $filename = $this->prefix . $md5;
-    $filename_meta = $this->prefix_meta . $md5 . '.meta';
-
-    // XXX is order important here?
+    $filename = $this->prefix . $this->encode_cid($cid);
     @unlink($filename);
-    @unlink($filename_meta);
   }
 
-  // helper function, $return[$filename][$cid] = $expire
-  protected function glob_meta() {
-    $result = array();
-    foreach (glob($this->prefix_meta . '*.meta', GLOB_NOSORT) as $filename_meta) { //XXX on error?
-      $meta_content = @file_get_contents($filename_meta);
-      if ($meta_content === FALSE) {
-	continue; // XXX should rebuild?
-      }
-      $meta = explode("\n", $meta_content);
-      if (!is_array($meta) ||
-	  count($meta) % 2 != 1 || // 1 line for count + 2 lines for each (cid,expire)
-	  strval(intval($meta[0])) != $meta[0] || // first line must be int
-	  intval($meta[0]) * 2 + 1 != count($meta)) { // see above
-	continue; // XXX should rebuild?
-      }
-      $filename = preg_replace('/\.meta$/', '', $filename_meta);
-      $result[$filename] = array();
-      for ($i = 1; $i < count($meta); $i += 2) {
-	// $result[$filename][$cid] = $expire
-	$result[$filename][$meta[$i]] = intval($meta[$i+1]);
+  protected function all($cid_prefix = '') {
+    $list = array();
+    $filename_prefix = $this->bin . '-' . $this->encode_cid($cid_prefix);
+    $filename_prefix_len = strlen($filename_prefix);
+    $cwd = getcwd();
+    chdir($this->directory);
+    $dh = opendir('.');
+    while (($filename = readdir($dh)) !== FALSE) {
+      if (strncmp($filename, $filename_prefix, $filename_prefix_len) === 0) {
+	$list[] = $filename;
       }
     }
-    return $result;
+    closedir($dh);
+    chdir($cwd);
+    return $list;
+  }
+
+  protected function delete_wildcard($cid_prefix) {
+    foreach ($this->all($cid_prefix) as $filename) {
+      @unlink ($this->directory . '/' . $filename);
+    }
   }
 
   protected function delete_expired() {
-    foreach ($this->glob_meta() as $filename => $cids) {
-      $filename_meta = $filename . '.meta'; //XXX assumes prefix == prefix_meta
-      foreach ($cids as $cid => $expire) {
-	if ($expire == CACHE_PERMANENT) {
-	  continue;
-	}
-	if ($expire == CACHE_TEMPORARY ||
-	    $expire < REQUEST_TIME) {
-	  //XXX is order important?
-	  @unlink($filename);
-	  @unlink($filename_meta);
-	  break;
-	}
+    $cwd = getcwd();
+    chdir($this->directory);
+    foreach ($this->all() as $filename) {
+      // XXX reads all entries XXX
+      $content = @file_get_contents($filename);
+      if ($content === FALSE) {
+	continue;
       }
-    }
+      $cache = @unserialize($content);
+      if ($content === FALSE) {
+	continue;
+      }
+      if ($cache->expire == CACHE_PERMANENT) {
+	continue;
+      }
+      if ($cache->expire == CACHE_TEMPORARY ||
+	  $cache->expire < REQUEST_TIME) {
+	@unlink($filename);
+      }
+    } // foreach $filename
+    chdir($cwd);
   }
 
   protected function delete_flushed() {
@@ -343,39 +279,30 @@ class DrupalFileCache implements DrupalCacheInterface {
       // Reset the variable immediately to prevent a meltdown in heavy load situations.
       variable_set('cache_flush_' . $this->bin, 0);
       // Time to flush old cache data
-      foreach ($this->glob_meta() as $filename => $cids) {
-	$filename_meta = $filename . '.meta'; //XXX assumes prefix == prefix_meta
-	foreach ($cids as $cid => $expire) {
-	  if ($expire != CACHE_PERMANENT &&
-	      $expire <= $cache_flush) {
-	    //XXX is order important?
-	    @unlink($filename);
-	    @unlink($filename_meta);
-	    break;
-	  }
+      $cwd = getcwd();
+      chdir($this->directory);
+      foreach ($this->all() as $filename) {
+	// XXX reads all entries XXX
+	$content = @file_get_contents($filename);
+	if ($content === FALSE) {
+	  continue;
 	}
-      }
-    }
+	$cache = @unserialize($content);
+	if ($content === FALSE) {
+	  continue;
+	}
+	if ($cache->expire != CACHE_PERMANENT &&
+	    $cache->expire <= $cache_flush) {
+	  @unlink($filename);
+	}
+      } // foreach $filename
+    } // if $cache_flush
 
     $recursion = FALSE;
   }
 
-  protected function delete_wildcard($cid_prefix) {
-    foreach ($this->glob_meta() as $filename => $cids) {
-      $filename_meta = $filename . '.meta'; //XXX assumes prefix == prefix_meta
-      foreach ($cids as $cid => $expire) {
-	if (strpos($cid, $cid_prefix) === 0) { //XXX could be more optimized
-	  //XXX is order important?
-	  @unlink($filename);
-	  @unlink($filename_meta);
-	  break;
-	}
-      }
-    }
-  }
-
   function isEmpty() {
-    return count($this->glob_meta()) == 0;
+    return count($this->all()) == 0;
   }
 
 }
