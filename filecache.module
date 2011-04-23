@@ -23,9 +23,6 @@ function filecache_cron() {
     $mtime2filenames = array();
     $cache_size = 0;
     foreach ($filenames as $filename) {
-      if ($filename == '.htaccess') { // XXX perhaps glob(*) skips it?
-	continue;
-      }
       if (strpos($filename, '.meta') !== FALSE) { // XXX skip meta:s
 	continue;
       }
