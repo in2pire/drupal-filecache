@@ -20,6 +20,8 @@ class DrupalFileCache implements DrupalCacheInterface {
   function __construct($bin) {
     $this->bin = $bin;
     $filecache_directory = filecache_directory();
+    $t = get_t();
+
     // Check for problems with filecache_directory
     $hint = FALSE;
     if (empty($filecache_directory)) {
@@ -29,21 +31,20 @@ class DrupalFileCache implements DrupalCacheInterface {
 	if (!file_exists($filecache_directory)) {
 	  // Directory does not exist. Try to create it.
 	  if (!mkdir($filecache_directory)) {
-	    $hint = t('%dir does not exist and <samp>filecache.inc</samp> was not able to create it probably due to permission problem.', array('%dir' => $filecache_directory));
+	    $hint = $t('%dir does not exist and <samp>filecache.inc</samp> was not able to create it probably due to permission problem.', array('%dir' => $filecache_directory));
 	  }
 	} else {
-	  $hint = t('%dir is not directory.', array('%dir' => $filecache_directory));
+	  $hint = $t('%dir is not directory.', array('%dir' => $filecache_directory));
 	}
       } elseif (!is_writable($filecache_directory)) {
-	$hint = t('%dir is directory but PHP cannot write to it.', array('%dir' => $filecache_directory));
+	$hint = $t('%dir is directory but PHP cannot write to it.', array('%dir' => $filecache_directory));
       }
     }
     if ($hint) {
 ?>
-      <p><strong>Fatal error: filecache_directory is not configured correctly. Please read <samp><?php print dirname(__FILE__) . '/README.txt' ?></samp>.</strong></p>
+<p><strong><?php print $t('Fatal error: filecache_directory is not configured correctly. Please read %readmetxt.', array('%readmetxt' => dirname(__FILE__) . '/README.txt')) ?></strong></p>
 
-      <p>Hint: <?php print $hint ?></p>
-
+<p><?php print $t('Hint: @hint', array('@hint' => $hint)) ?></p>
 <?php
       die();
     }

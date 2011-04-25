@@ -16,6 +16,7 @@ function filecache_cron() {
 
   // XXX just adapted from DrupalFileCache::delete_expired()
 
+  $cache_size = 0;
   $cwd = getcwd();
   chdir($this->directory);
   $dh = opendir('.');
@@ -24,12 +25,20 @@ function filecache_cron() {
     // XXX reads all entries XXX
     $content = @file_get_contents($filename);
     if ($content === FALSE) {
-      continue;
+      continue; // some problem in reading but we don't care
     }
     $cache = @unserialize($content);
     if ($content === FALSE) {
+      continue; // broken file - don't remove it because it may not belong to us
+    }
+
+    // gather statistics
+    $stat = @stat($filename);
+    if ($stat === FALSE) {
       continue;
     }
+    $cache_size += $stat['blocks'] >= 0 ? $stat['blocks']*512 : $stat['size'];
+
     if ($cache->expire == CACHE_PERMANENT) {
       continue;
     }
@@ -40,6 +49,8 @@ function filecache_cron() {
   } // foreach $filename
   close($dh);
   chdir($cwd);
+
+  cache_set('filecache_space', array('cache_size' => $cache_size));
 }
 
 function filecache_requirements($phase) {
@@ -47,93 +58,20 @@ function filecache_requirements($phase) {
   $t = get_t();
   $requirements = array('title' => $t('File Cache'));
   $requirements['severity'] = REQUIREMENT_ERROR; // Assume error first
-
-  if (strpos($_SERVER['SERVER_SOFTWARE'], 'Apache') === 0) {
-    $directory_line = ''; // No need for configuring filecache_directory
-  } else {
-    $suffix = '-'. array_pop(explode('/', conf_path()));
-    if ($suffix == '-default') {
-      $suffix = '';
-    }
-    $directory_line = "\$conf['filecache_directory'] = '/tmp/filecache$suffix'; // Where to store cache files";
-  }
+  $readme_hint = $t('Please follow instructions in %readme.',
+		    array('%readme' => dirname(__FILE__) . '/README.txt'));
 
   if (!function_exists('filecache_directory')) {
     // filecache.inc is not included
-    $settings_php = conf_path() . '/settings.php';
-    $requirements['value'] = $t('No setup in %settings.',
-				array('%settings' => $settings_php));
-
-
-    // XXX filecache.inc can be in other places than sites/all
-    $requirements['description'] = 
-      $t('Add the following lines to your %settings:<br />'.
-	 "<pre>@line1\n@line2\n@line3</pre>",
-	 array('%settings' => $settings_php,
-	       '@line1' => "\$conf['cache_backends'] = array('sites/all/modules/filecache/filecache.inc');",
-	       '@line2' => "\$conf['cache_default_class'] = 'DrupalFileCache';",
-	       '@line3' => $directory_line,
-	       )
-	 );
-    
+    $requirements['value'] = $t('No File Cache setup in %settings.',
+				array('%settings' => conf_path() . '/settings.php'));
+    $requirements['description'] = $readme_hint;
     return array('filecache' => $requirements);
   }
 
   $filecache_directory = filecache_directory();
 
-  if (!$filecache_directory) {
-    if ($directory_line) {
-      // No filecache_directory and no Apache
-      $requirements['value'] =
-	$t('No setup for filecache_directory in %settings.',
-	   array('%settings' => $settings_php));
-      $requirements['description'] = 
-	$t('You are not using Apache so '.
-	   'you cannot use automatic directory setup. '.
-	   'Add the following line to your %settings:<br />'.
-	   "<pre>@line<pre>",
-	   array('%settings' => $settings_php,
-		 '@line' => $directory_line,
-		 )
-	   );
-      return array('filecache' => $requirements);
-    } else {
-      die('Should never reach here. Please file issue against File Cache module.');
-    }
-  }
-
-  // Checks if everything with filecache directory is OK
-  $description =
-    $t('Create filecache directory and make it writable by Drupal:<br />'.
-       '<pre>@line1\n@line2</pre>',
-       array('@line1' => 'mkdir ' . $filecache_directory,
-	     '@line2' => 'chown ' . get_current_user() .' '. $filecache_directory,
-	     )
-       );
-
-  if (!file_exists($filecache_directory)) {
-    $requirements['value'] =
-      $t('File Cache directory %dir doesn\'t exist.',
-	 array('%dir' => $filecache_directory));
-    $requirements['description'] = $description;
-    return array('filecache' => $requirements);
-  }
-  if (!is_dir($filecache_directory)) {
-    $requirements['value'] =
-      $t('File Cache directory %dir is not a directory.',
-	 array('%dir' => $filecache_directory));
-    $requirements['description'] = $description;
-    return array('filecache' => $requirements);
-  }
-  if (!is_writable($filecache_directory)) {
-    $requirements['value'] =
-      $t('File Cache directory %dir is not writable by Drupal/PHP.',
-	 array('%dir' => $filecache_directory));
-    $requirements['description'] = $description;
-    return array('filecache' => $requirements);
-  }
-
-  // All critical checks are passed. Scan what cache bins we serve
+  // Scan what cache bins we serve
   $default_bin = (variable_get('cache_default_class','') == 'DrupalFileCache');
   $filecache_bins = array();
   $other_bins = array();
@@ -153,19 +91,12 @@ function filecache_requirements($phase) {
 
   if (!$default_bin && empty($filecache_bins)) {
     $requirements['severity'] = REQUIREMENT_WARNING;
-    $requirements['value'] = 'No cache bins are served by File Cache.';
-    $requirements['description'] =
-      $t('To use File Cache for all cache bins by default, '.
-	 'add the following line to %settings:<br />'.
-	 '<pre>@line</pre>',
-	 array('%settings' => $settings_php,
-	       '@line' => "\$conf['cache_default_class'] = 'DrupalFileCache';",
-	       )
-	 );
+    $requirements['value'] = $t('No cache bins are served by File Cache.');
+    $requirements['description'] = $readme_hint;
     return array('filecache' => $requirements);
   }   
 
-  // Phew, now everything looks OK. Show what cache bins we serve
+  // Show what cache bins we serve (in $requirements['value'])
   $requirements['severity'] = REQUIREMENT_OK;
   if ($default_bin) {
     if (empty($other_bins)) {
@@ -182,7 +113,7 @@ function filecache_requirements($phase) {
 	 array('%bins' => $filecache_bins));
   }
 
-  // Show filecache_directory and its size
+  // Show filecache_directory and its size (in $requirements['description'])
   $space = cache_get('filecache_space');
   $cron_last = variable_get('cron_last');
   if ($space) {
@@ -195,8 +126,8 @@ function filecache_requirements($phase) {
 	 );
   } else {
     $requirements['description'] =
-      $t('File Cache directory %dir uses unknown disk space. '.
-	 'Run cron to update.');
+    $t('File Cache directory %dir uses unknown disk space. Run cron to update.',
+       $filecache_directory);
   }
 
   return array('filecache' => $requirements);

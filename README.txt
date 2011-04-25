@@ -1,19 +1,19 @@
-Introduction
-------------
+-*- mode: org -*- in Emacs
+
+* Introduction
 
 This modules allows Drupal caches to be stored in files instead of
 storing in database.
 
-Comparison with other caching modules
--------------------------------------
+* Comparison with other caching modules
 
 memcache is the closest caching module. File Cache can be configured
 to use memory filesystem (e.g. /dev/shm in Debian) which is very close
-to what memcache do. File Cache can use network filesystems and this
+to what memcache does. File Cache can use network filesystems and this
 is another use case where memcache is traditionally used.
 
 apc can be used for cache bins too. If it's used for that purpose,
-it's usually only for some of the critical cache bins like cache and
+it's usually only for some of the small cache bins like cache and
 cache_bootstrap.
 
 boost generates caches of pages that are directly served by web
@@ -22,8 +22,7 @@ very fast page caching but this still needs a bit of PHP to be
 executed. Database access can be avoided altogether though. See
 $conf['filecache_fast_pagecache'] below.
 
-Feedback
---------
+* Feedback
 
 Benchmark results in real scenarios are needed in comparison against
 memcache, apc and boost. If you have such experience, please share
@@ -31,18 +30,48 @@ with File Cache maintainer 'ogi' (Ognyan Kulev). Numbers in
 comparison with memcache against File Cache on memory filesystem are
 especially important.
 
-Quick Installation
-------------------
+* Quick Installation when web server is Apache
 
-Install module as usual, e.g. by placing unpacked filecache directory
-in sites/all/modules and enabling the module in admin/modules. Go to
-admin/reports/status and follow the instructions. These instructions
-are meant to be complete so if they are not enough, file issue against
-File Cache module.
+Install and enable filecache module as usual, e.g. by placing unpacked
+filecache directory in sites/all/modules and enabling the module in
+admin/modules. Detailed information can be found in
+http://drupal.org/documentation/install/modules-themes/modules-7
 
-NOT IMPLEMENTED YET:
-filecache_fast_pagecache
-------------------------
+File Cache needs directory that is not accessible through web
+server. When Apache is used, Drupal's .htaccess file protects all
+files and directories that begin with ".ht" and File Cache can
+automatically and safely create a File Cache directory. In this case,
+adding the following lines to "settings.php" is enough for basic
+operation.
+
+$conf['cache_backends'] = array('sites/all/modules/filecache/filecache.inc');
+$conf['cache_default_class'] = 'DrupalFileCache';
+
+* Installation when web server is not Apache
+
+If Apache is not used, File Cache directory must be provided in
+"settings.php" by setting "filecache_directory" configuration
+variable. This directory must be writable by Drupal and must not be
+accessible through web server. If it doesn't exist, File Cache tries
+to create it.
+
+File Cache checks if provided directory is writable but doesn't check
+if it's not accessible through web server. You must do this check
+yourself.
+
+Directory may be relative to Drupal root directory.
+
+Here is a example of a simple configuration that works for multi-site
+deployment. conf_path() always returns "sites/SITENAME" and this is
+used to retrieve SITENAME. File Cache creates directory if it doesn't
+exist and there should be no problem with permissions since it's in
+/tmp.
+
+$conf['cache_backends'] = array('sites/all/modules/filecache/filecache.inc');
+$conf['cache_default_class'] = 'DrupalFileCache';
+$conf['filecache_directory'] = '/tmp/filecache-' . substr(conf_path(), 6);
+
+* NOT IMPLEMENTED YET: filecache_fast_pagecache
 
  #$conf['filecache_fast_pagecache'] = TRUE;
 
@@ -64,50 +93,31 @@ $conf['page_cache_maximum_age'] = $variables['page_cache_maximum_age'];
 $conf['cache_lifetime'] = $variables['cache_lifetime'];
 $conf['page_compression'] = $variables['page_compression'];
 
-Cache directory
----------------
+* Procedure for setting and getting cache entries
 
-If $conf['filecache_directory'] is not configured and web server is
-Apache,, File Cache uses 'filecache' directory in site configuration
-directory (e.g. sites/default) for keeping cache files. An .htaccess
-file will be created so that content of directory is not accessible
-through Apache.
+Each cache object is stored in a separate file. File name is
+concatenated cache bin name, '-' character, and urlencode()-like
+encoded cid. Written in code, it's "$cachebin-$urlencodedcid". File
+content is serialized stdClass exactly as returned by cache_get(),
+i.e. stdClass with properties cid, created, expire and data.
 
-If Apache is not detected and no directory is configured, filecache
-will abort any page requests and demand proper configuration.
+cache_set uses the following sequence of operations on file that
+contains cache object:
 
-Cache files
------------
+1. take exclusive lock
+2. truncate to zero size
+3. write new file content
+4. release exclusive lock
 
-File names are in the format $bin-$md5_of_cid. (No file locking is
-used but this will be changed.) Modifying cache file is done by
-creating new file with extension .NUMBER.tmp, unlinking the original one, and
-renaming the new file to original name.
+cache_get is designed to be as fast as possible. It just tries to read
+serialized content. If content cannot be unserialized, then some other
+page request is running cache_set. (From truncation of file to
+completing write of new file content, the content of the file is
+unserializable.) In this case, shared lock on file is taken before
+reading serialized content. If this second time fails again, it's not
+because cache_set is interfering and so broken file is removed.
 
-File content is serialized stdClass with keys that mirror cache in DB:
-cid, data, created, expire.
-
-NOT IMPLEMENTED:
-Replacement for includes/session_inc
-------------------------------------
+* NOT IMPLEMENTED: Replacement for includes/session.inc
 
 Using File Cache for storing sessions.
 
-BUGS
-----
-
-When switching back to DB/PostgreSQL back end, some DB locking
-occurs. Need to investigate.
-
-cache_clear_all ignores cache_lifetime.
-
-cache_clear_all doesn't properly handle $wildcard=TRUE. How to fix it?
-
-File Cache directory can grow indefinetely.
-
-TODO
-----
-
-Using flock will be faster (for cache_set) and more reliable.
-
-Recommend using memory filesystem.
