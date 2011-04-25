@@ -1,4 +1,4 @@
-name = "File Cache"
-description = "File cache backend"
-version = 7.x-1.x-dev
+name = File Cache
+description = Cache backend that uses file system for storage.
 core = 7.x
+package = Performance and Scalability
