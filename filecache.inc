@@ -103,7 +103,6 @@ class DrupalFileCache implements DrupalCacheInterface {
 	($cache->expire < REQUEST_TIME ||
 	 ($cache_flush && $cache->created < $cache_flush))) {
       unlink($filename);
-      //dpm('Removed expired/flushed '.$bin.' '.$cid); 
       return FALSE;
     }
 
