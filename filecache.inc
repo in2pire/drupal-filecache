@@ -1,9 +1,5 @@
 <?php
 
-function filecache_urlencode($matches) {
-  return urlencode($matches[0]);
-}
-
 function filecache_directory() {
   $filecache_directory = variable_get('filecache_directory', FALSE);
   if ($filecache_directory === FALSE) {
@@ -55,8 +51,9 @@ class DrupalFileCache implements DrupalCacheInterface {
   }
 
   function encode_cid($cid) {
-    // urlencode is run only for %, /, control or non-ASCII character
-    return preg_replace_callback('/[^ -$&-.0-~]/', 'filecache_urlencode', $cid);
+    // Use urlencode() but ':' is used so often in Drupal's cid that
+    // it's turned back into unencoded character
+    return str_replace('%3A', ':', urlencode($cid));
   }
 
   function decode_cid($filename) {
