@@ -18,7 +18,7 @@ function filecache_cron() {
 
   $cache_size = 0;
   $cwd = getcwd();
-  chdir($this->directory);
+  chdir($filecache_directory);
   $dh = opendir('.');
   while (($filename = readdir($dh)) !== FALSE) {
     // XXX this tries to read every file regardless if it's cache entry
@@ -28,7 +28,7 @@ function filecache_cron() {
       continue; // some problem in reading but we don't care
     }
     $cache = @unserialize($content);
-    if ($content === FALSE) {
+    if ($content === FALSE || !is_object($cache)) {
       continue; // broken file - don't remove it because it may not belong to us
     }
 
@@ -47,7 +47,7 @@ function filecache_cron() {
       @unlink($filename);
     }
   } // foreach $filename
-  close($dh);
+  closedir($dh);
   chdir($cwd);
 
   cache_set('filecache_space', array('cache_size' => $cache_size));
