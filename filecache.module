@@ -126,8 +126,8 @@ function filecache_requirements($phase) {
 	 );
   } else {
     $requirements['description'] =
-    $t('File Cache directory %dir uses unknown disk space. Run cron to update.',
-       $filecache_directory);
+      $t('File Cache directory %dir uses unknown disk space. Run cron to update.',
+	 array('%dir' => $filecache_directory));
   }
 
   return array('filecache' => $requirements);
