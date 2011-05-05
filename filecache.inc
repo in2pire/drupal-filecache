@@ -293,6 +293,7 @@ class DrupalFileCache implements DrupalCacheInterface {
 	  @unlink($filename);
 	}
       } // foreach $filename
+      chdir($cwd);
     } // if $cache_flush
 
     $recursion = FALSE;
