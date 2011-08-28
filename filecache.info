@@ -1,4 +1,4 @@
 name = File Cache
 description = Cache backend that uses file system for storage.
 core = 7.x
-package = Performance and Scalability
+package = Performance and scalability
