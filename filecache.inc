@@ -26,7 +26,7 @@ class DrupalFileCache implements DrupalCacheInterface {
       if (!is_dir($filecache_directory)) {
 	if (!file_exists($filecache_directory)) {
 	  // Directory does not exist. Try to create it.
-	  if (!mkdir($filecache_directory)) {
+	  if (!mkdir($filecache_directory, 0755, TRUE)) {
 	    $hint = $t('%dir does not exist and <samp>filecache.inc</samp> was not able to create it probably due to permission problem.', array('%dir' => $filecache_directory));
 	  }
 	} else {
