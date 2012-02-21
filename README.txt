@@ -7,20 +7,29 @@ storing in database.
 
 * Comparison with other caching modules
 
-memcache is the closest caching module. File Cache can be configured
-to use memory filesystem (e.g. /dev/shm in Debian) which is very close
-to what memcache does. File Cache can use network filesystems and this
-is another use case where memcache is traditionally used.
+Built-in Drupal cache uses database backend.  There is one SQL query
+for each accessed cache entry.  This is much slower than simple file
+access as used by filecache module.  
 
-apc can be used for cache bins too. If it's used for that purpose,
+memcache module is the closest caching module. File Cache can be
+configured to use memory filesystem (e.g. /dev/shm in Debian) which is
+very close to what memcache does. File Cache can use network
+filesystems and this is another use case where memcache is
+traditionally used.
+
+apc module can be used for cache bins too. If it's used for that purpose,
 it's usually only for some of the small cache bins like cache and
 cache_bootstrap.
 
-boost generates caches of pages that are directly served by web
+boost module generates caches of pages that are directly served by web
 server. File Cache can plug in regular Drupal page caching and provide
 very fast page caching but this still needs a bit of PHP to be
 executed. Database access can be avoided altogether though. See
 $conf['filecache_fast_pagecache'] below.
+
+Drupal 7 allows using different caching module for different cache
+bins, e.g. using apc module for cache and cache_bootstrap bins and
+filecache for everything else.
 
 * Feedback
 
