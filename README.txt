@@ -130,3 +130,10 @@ because cache_set is interfering and so broken file is removed.
 
 Using File Cache for storing sessions.
 
+* Security Considerations
+
+Usually filecache cleans its cache with credentials of web server.
+When using Drush and the latter tries to clean cache, this operation
+is run with user's credentials that are generally different than web
+server's credentials.  For this reason, filecache creates all files
+and directories with read/write permissions for all.

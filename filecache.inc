@@ -26,8 +26,14 @@ class DrupalFileCache implements DrupalCacheInterface {
       if (!is_dir($filecache_directory)) {
 	if (!file_exists($filecache_directory)) {
 	  // Directory does not exist. Try to create it.
-	  if (!mkdir($filecache_directory, 0755, TRUE)) {
+	  if (!mkdir($filecache_directory, 0777, TRUE)) {
 	    $hint = $t('%dir does not exist and <samp>filecache.inc</samp> was not able to create it probably due to permission problem.', array('%dir' => $filecache_directory));
+	  }
+	  if (!chmod($filecache_directory, 0777)) {
+	    // insist that $filecache_directory must have 777 access mode
+	    // or better not exist at all
+	    rmdir($filecache_directory);
+	    $hint = $t('%dir does not exist, <samp>filecache.inc</samp> successfully created it but chmod 777 failed.', array('%dir' => $filecache_directory));
 	  }
 	} else {
 	  $hint = $t('%dir is not directory.', array('%dir' => $filecache_directory));
@@ -131,13 +137,26 @@ class DrupalFileCache implements DrupalCacheInterface {
   function set($cid, $data, $expire = CACHE_PERMANENT) {
     $filename = $this->prefix . $this->encode_cid($cid);
 
-    $fh = fopen($filename, 'c+b');
+    // Open file for that entry, handling errors that may arise
+    $fh = @fopen($filename, 'r+b');
     if ($fh === FALSE) {
-      // most likely permission error - report it as critical error
-      watchdog('filecache', 'Canot open %filename',
-	       array('%filename' => $filename), WATCHDOG_CRITICAL);
-      return;
+      // If file doesn't exist, create it with a+w permissions
+      $fh = fopen($filename, 'c+b');
+      if ($fh !== FALSE) {
+	if (!chmod($filename, 0777)) {
+	  watchdog('filecache', 'Cannot chmod %filename',
+		   array('%filename' => $filename), WATCHDOG_CRITICAL);
+	  return;
+	}
+      } else {
+	// most likely permission error - report it as critical error
+	watchdog('filecache', 'Cannot open %filename',
+		 array('%filename' => $filename), WATCHDOG_CRITICAL);
+	return;
+      }
     }
+
+    // Our safeguard for simultaneous writing in the same file
     if (flock($fh, LOCK_EX) === FALSE) {
       fclose($fh);
       return;
