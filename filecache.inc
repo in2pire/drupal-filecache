@@ -3,9 +3,13 @@
 function filecache_directory() {
   $filecache_directory = variable_get('filecache_directory', FALSE);
   if ($filecache_directory === FALSE) {
-    // Default directory for Apache only
-    if (strpos($_SERVER['SERVER_SOFTWARE'], 'Apache') === 0) {
-      $filecache_directory = DRUPAL_ROOT . '/' . conf_path() . '/files/.ht.filecache';
+    // Default directory for Apache only but if it already exists, use it
+    // http://drupal.org/node/1337084 (Drush support)
+    $filecache_directory = DRUPAL_ROOT . '/' . conf_path() . '/files/.ht.filecache';
+    if (strpos($_SERVER['SERVER_SOFTWARE'], 'Apache') !== 0 &&
+	!is_dir($filecache_directory)) {
+      // Neither Apache, nor default directory exists
+      $filecache_directory = FALSE;
     }
   }
   return $filecache_directory;
