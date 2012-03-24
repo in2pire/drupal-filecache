@@ -1,5 +1,14 @@
 <?php
 
+// Max filename length for cid. Doesn't include cache bin prefix.
+// Must be at least 34 (see FILECACHE_CID_FILENAME_POS_BEFORE_MD5).
+define('FILECACHE_CID_FILENAME_MAX', 200);
+
+// Cut point between not MD5 encoded and MD5 encoded
+// 34 is '%_' + 32 hexdigits for 128-bit MD5
+define('FILECACHE_CID_FILENAME_POS_BEFORE_MD5', FILECACHE_CID_FILENAME_MAX - 34);
+
+
 function filecache_directory() {
   $filecache_directory = variable_get('filecache_directory', FALSE);
   if ($filecache_directory === FALSE) {
@@ -66,7 +75,15 @@ class DrupalFileCache implements DrupalCacheInterface {
     // often. (Especially ':', but '/' is used in cache_menu.)
     // We can't turn them back into their own characters though; both are
     // considered unsafe in filenames. So turn : -> <space> and / -> ^
-    return str_replace(array('%2F','%3A'), array('^',' '), urlencode($cid));
+    $safe_cid = str_replace(array('%2F','%3A'), array('^',' '), urlencode($cid));
+    if (strlen($safe_cid) > FILECACHE_CID_FILENAME_MAX) {
+      $safe_cid =
+	substr($safe_cid, 0, FILECACHE_CID_FILENAME_POS_BEFORE_MD5) .
+	'%_' .
+	md5(substr($safe_cid, FILECACHE_CID_FILENAME_POS_BEFORE_MD5));
+    }
+
+    return $safe_cid;
   }
 
   function decode_cid($filename) {
