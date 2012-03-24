@@ -1,4 +1,4 @@
-<?php
+<?php // -*- indent-tabs-mode:nil -*-
 
 define('FILECACHE_CRON_MAX_FILES', 100);
 
@@ -43,7 +43,7 @@ function filecache_cron() {
       continue;
     }
     if ($cache->expire == CACHE_TEMPORARY ||
-	$cache->expire < REQUEST_TIME) {
+        $cache->expire < REQUEST_TIME) {
       @unlink($filename);
     }
   } // foreach $filename
@@ -59,12 +59,12 @@ function filecache_requirements($phase) {
   $requirements = array('title' => $t('File Cache'));
   $requirements['severity'] = REQUIREMENT_ERROR; // Assume error first
   $readme_hint = $t('Please follow instructions in %readme.',
-		    array('%readme' => dirname(__FILE__) . '/README.txt'));
+                    array('%readme' => dirname(__FILE__) . '/README.txt'));
 
   if (!function_exists('filecache_directory')) {
     // filecache.inc is not included
     $requirements['value'] = $t('No File Cache setup in %settings.',
-				array('%settings' => conf_path() . '/settings.php'));
+                                array('%settings' => conf_path() . '/settings.php'));
     $requirements['description'] = $readme_hint;
     return array('filecache' => $requirements);
   }
@@ -80,9 +80,9 @@ function filecache_requirements($phase) {
     if (strpos($key, 'cache_class_') === 0) {
       $bin = implode('_', array_slice(explode('_', $key), 2));
       if ($value == 'DrupalFileCache') {
-	$filecache_bins[] = $bin;
+        $filecache_bins[] = $bin;
       } else {
-	$other_bins[] = $bin;
+        $other_bins[] = $bin;
       }
     }
   }
@@ -101,16 +101,16 @@ function filecache_requirements($phase) {
   if ($default_bin) {
     if (empty($other_bins)) {
       $requirements['value'] =
-	$t('All cache bins are served by File Cache.');
+        $t('All cache bins are served by File Cache.');
     } else {
       $requirements['value'] =
-	$t('All cache bins except %bins are served by File Cache.',
-	   array('%bins' => $other_bins));
+        $t('All cache bins except %bins are served by File Cache.',
+           array('%bins' => $other_bins));
     }
   } else {
     $requirements['value'] =
       $t('File Cache serves the following cache bins: %bins.',
-	 array('%bins' => $filecache_bins));
+         array('%bins' => $filecache_bins));
   }
 
   // Show filecache_directory and its size (in $requirements['description'])
@@ -119,15 +119,15 @@ function filecache_requirements($phase) {
   if ($space) {
     $requirements['description'] =
       $t('File Cache directory %dir uses !size (!time ago)',
-	 array('%dir' => $filecache_directory,
-	       '!size' => format_size($space->data['cache_size']),
-	       '!time' => format_interval(REQUEST_TIME - $cron_last),
-	       )
-	 );
+         array('%dir' => $filecache_directory,
+               '!size' => format_size($space->data['cache_size']),
+               '!time' => format_interval(REQUEST_TIME - $cron_last),
+               )
+         );
   } else {
     $requirements['description'] =
       $t('File Cache directory %dir uses unknown disk space. Run cron to update.',
-	 array('%dir' => $filecache_directory));
+         array('%dir' => $filecache_directory));
   }
 
   return array('filecache' => $requirements);

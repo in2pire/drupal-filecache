@@ -1,4 +1,4 @@
-<?php
+<?php // -*- indent-tabs-mode:nil -*-
 
 // Max filename length for cid. Doesn't include cache bin prefix.
 // Must be at least 34 (see FILECACHE_CID_FILENAME_POS_BEFORE_MD5).
@@ -16,7 +16,7 @@ function filecache_directory() {
     // http://drupal.org/node/1337084 (Drush support)
     $filecache_directory = DRUPAL_ROOT . '/' . conf_path() . '/files/.ht.filecache';
     if (strpos($_SERVER['SERVER_SOFTWARE'], 'Apache') !== 0 &&
-	!is_dir($filecache_directory)) {
+        !is_dir($filecache_directory)) {
       // Neither Apache, nor default directory exists
       $filecache_directory = FALSE;
     }
@@ -37,22 +37,22 @@ class DrupalFileCache implements DrupalCacheInterface {
       $hint = t('Your web server is not Apache and so default filecache_directory cannot be used.');
     } else {
       if (!is_dir($filecache_directory)) {
-	if (!file_exists($filecache_directory)) {
-	  // Directory does not exist. Try to create it.
-	  if (!mkdir($filecache_directory, 0777, TRUE)) {
-	    $hint = $t('%dir does not exist and <samp>filecache.inc</samp> was not able to create it probably due to permission problem.', array('%dir' => $filecache_directory));
-	  }
-	  if (!chmod($filecache_directory, 0777)) {
-	    // insist that $filecache_directory must have 777 access mode
-	    // or better not exist at all
-	    rmdir($filecache_directory);
-	    $hint = $t('%dir does not exist, <samp>filecache.inc</samp> successfully created it but chmod 777 failed.', array('%dir' => $filecache_directory));
-	  }
-	} else {
-	  $hint = $t('%dir is not directory.', array('%dir' => $filecache_directory));
-	}
+        if (!file_exists($filecache_directory)) {
+          // Directory does not exist. Try to create it.
+          if (!mkdir($filecache_directory, 0777, TRUE)) {
+            $hint = $t('%dir does not exist and <samp>filecache.inc</samp> was not able to create it probably due to permission problem.', array('%dir' => $filecache_directory));
+          }
+          if (!chmod($filecache_directory, 0777)) {
+            // insist that $filecache_directory must have 777 access mode
+            // or better not exist at all
+            rmdir($filecache_directory);
+            $hint = $t('%dir does not exist, <samp>filecache.inc</samp> successfully created it but chmod 777 failed.', array('%dir' => $filecache_directory));
+          }
+        } else {
+          $hint = $t('%dir is not directory.', array('%dir' => $filecache_directory));
+        }
       } elseif (!is_writable($filecache_directory)) {
-	$hint = $t('%dir is directory but PHP cannot write to it.', array('%dir' => $filecache_directory));
+        $hint = $t('%dir is directory but PHP cannot write to it.', array('%dir' => $filecache_directory));
       }
     }
     if ($hint) {
@@ -78,9 +78,9 @@ class DrupalFileCache implements DrupalCacheInterface {
     $safe_cid = str_replace(array('%2F','%3A'), array('^',' '), urlencode($cid));
     if (strlen($safe_cid) > FILECACHE_CID_FILENAME_MAX) {
       $safe_cid =
-	substr($safe_cid, 0, FILECACHE_CID_FILENAME_POS_BEFORE_MD5) .
-	'%_' .
-	md5(substr($safe_cid, FILECACHE_CID_FILENAME_POS_BEFORE_MD5));
+        substr($safe_cid, 0, FILECACHE_CID_FILENAME_POS_BEFORE_MD5) .
+        '%_' .
+        md5(substr($safe_cid, FILECACHE_CID_FILENAME_POS_BEFORE_MD5));
     }
 
     return $safe_cid;
@@ -106,29 +106,29 @@ class DrupalFileCache implements DrupalCacheInterface {
       // we are in the middle of cache_set
       $fh = fopen($filename, 'rb');
       if ($fh === FALSE) {
-	return FALSE;
+        return FALSE;
       }
       if (flock($fh, LOCK_SH) === FALSE) {
-	fclose($fh);
-	return FALSE;
+        fclose($fh);
+        return FALSE;
       }
       $cache = @unserialize(@stream_get_contents($fh));
       if ($cache === FALSE ||
-	  flock($fh, LOCK_UN) === FALSE ||
-	  fclose($fh) === FALSE) {
-	unlink($filename); // remove broken file
-	flock($fh, LOCK_UN);
-	fclose($fh);
-	return FALSE;
+          flock($fh, LOCK_UN) === FALSE ||
+          fclose($fh) === FALSE) {
+        unlink($filename); // remove broken file
+        flock($fh, LOCK_UN);
+        fclose($fh);
+        return FALSE;
       }
     }
 
     // XXX Should reproduce the cache_lifetime / cache_flush_$bin logic
     $cache_flush = variable_get('filecache_flush_'. $this->bin, 0);
     if ($cache->expire != CACHE_TEMPORARY && // XXX how to handle this?
-	$cache->expire != CACHE_PERMANENT &&
-	($cache->expire < REQUEST_TIME ||
-	 ($cache_flush && $cache->created < $cache_flush))) {
+        $cache->expire != CACHE_PERMANENT &&
+        ($cache->expire < REQUEST_TIME ||
+         ($cache_flush && $cache->created < $cache_flush))) {
       unlink($filename);
       return FALSE;
     }
@@ -151,8 +151,8 @@ class DrupalFileCache implements DrupalCacheInterface {
     foreach ($cids as $cid) {
       $cache = $this->get($cid);
       if ($cache !== FALSE) {
-	$results[$cid] = $cache;
-	unset($cids[$cid]);
+        $results[$cid] = $cache;
+        unset($cids[$cid]);
       }
     }
     return $results;
@@ -167,16 +167,16 @@ class DrupalFileCache implements DrupalCacheInterface {
       // If file doesn't exist, create it with a+w permissions
       $fh = fopen($filename, 'c+b');
       if ($fh !== FALSE) {
-	if (!chmod($filename, 0777)) {
-	  watchdog('filecache', 'Cannot chmod %filename',
-		   array('%filename' => $filename), WATCHDOG_CRITICAL);
-	  return;
-	}
+        if (!chmod($filename, 0777)) {
+          watchdog('filecache', 'Cannot chmod %filename',
+                   array('%filename' => $filename), WATCHDOG_CRITICAL);
+          return;
+        }
       } else {
-	// most likely permission error - report it as critical error
-	watchdog('filecache', 'Cannot open %filename',
-		 array('%filename' => $filename), WATCHDOG_CRITICAL);
-	return;
+        // most likely permission error - report it as critical error
+        watchdog('filecache', 'Cannot open %filename',
+                 array('%filename' => $filename), WATCHDOG_CRITICAL);
+        return;
       }
     }
 
@@ -193,9 +193,9 @@ class DrupalFileCache implements DrupalCacheInterface {
     $cache->data = $data;
 
     if (ftruncate($fh, 0) === FALSE ||
-	fwrite($fh, serialize($cache)) === FALSE ||
-	flock($fh, LOCK_UN) === FALSE ||
-	fclose($fh) === FALSE) {
+        fwrite($fh, serialize($cache)) === FALSE ||
+        flock($fh, LOCK_UN) === FALSE ||
+        fclose($fh) === FALSE) {
       // XXX should not happen -> cleanup
       unlink($filename);
       flock($fh, LOCK_UN);
@@ -225,31 +225,31 @@ class DrupalFileCache implements DrupalCacheInterface {
         elseif (REQUEST_TIME > ($cache_flush + variable_get('cache_lifetime', 0))) {
           // Clear the cache for everyone, cache_lifetime seconds have
           // passed since the first request to clear the cache.
-	  $this->delete_expired();
+          $this->delete_expired();
           variable_set('cache_flush_' . $this->bin, 0);
         }
       }
       else {
         // No minimum cache lifetime, flush all temporary cache entries now.
-	$this->delete_expired();
+        $this->delete_expired();
       }
     }
     else {
       if ($wildcard) {
         if ($cid == '*') {
-	  $this->delete_wildcard('');
+          $this->delete_wildcard('');
         }
         else {
-	  $this->delete_wildcard($cid);
+          $this->delete_wildcard($cid);
         }
       }
       elseif (is_array($cid)) {
-	foreach ($cid as $one_cid) {
-	  $this->delete_one($one_cid);
-	}
+        foreach ($cid as $one_cid) {
+          $this->delete_one($one_cid);
+        }
       }
       else {
-	$this->delete_one($cid);
+        $this->delete_one($cid);
       }
     }
   }
@@ -268,7 +268,7 @@ class DrupalFileCache implements DrupalCacheInterface {
     $dh = opendir('.');
     while (($filename = readdir($dh)) !== FALSE) {
       if (strncmp($filename, $filename_prefix, $filename_prefix_len) === 0) {
-	$list[] = $filename;
+        $list[] = $filename;
       }
     }
     closedir($dh);
@@ -289,18 +289,18 @@ class DrupalFileCache implements DrupalCacheInterface {
       // XXX reads all entries XXX
       $content = @file_get_contents($filename);
       if ($content === FALSE) {
-	continue;
+        continue;
       }
       $cache = @unserialize($content);
       if ($content === FALSE) {
-	continue;
+        continue;
       }
       if ($cache->expire == CACHE_PERMANENT) {
-	continue;
+        continue;
       }
       if ($cache->expire == CACHE_TEMPORARY ||
-	  $cache->expire < REQUEST_TIME) {
-	@unlink($filename);
+          $cache->expire < REQUEST_TIME) {
+        @unlink($filename);
       }
     } // foreach $filename
     chdir($cwd);
@@ -322,19 +322,19 @@ class DrupalFileCache implements DrupalCacheInterface {
       $cwd = getcwd();
       chdir($this->directory);
       foreach ($this->all() as $filename) {
-	// XXX reads all entries XXX
-	$content = @file_get_contents($filename);
-	if ($content === FALSE) {
-	  continue;
-	}
-	$cache = @unserialize($content);
-	if ($content === FALSE) {
-	  continue;
-	}
-	if ($cache->expire != CACHE_PERMANENT &&
-	    $cache->expire <= $cache_flush) {
-	  @unlink($filename);
-	}
+        // XXX reads all entries XXX
+        $content = @file_get_contents($filename);
+        if ($content === FALSE) {
+          continue;
+        }
+        $cache = @unserialize($content);
+        if ($content === FALSE) {
+          continue;
+        }
+        if ($cache->expire != CACHE_PERMANENT &&
+            $cache->expire <= $cache_flush) {
+          @unlink($filename);
+        }
       } // foreach $filename
       chdir($cwd);
     } // if $cache_flush
