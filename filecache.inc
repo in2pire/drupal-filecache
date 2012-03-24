@@ -61,9 +61,12 @@ class DrupalFileCache implements DrupalCacheInterface {
   }
 
   function encode_cid($cid) {
-    // Use urlencode() but ':' is used so often in Drupal's cid that
-    // it's turned back into unencoded character
-    return str_replace('%3A', ':', urlencode($cid));
+    // Use urlencode(), but turn the
+    // encoded ':' and '/' back into ordinary characters since they're used so
+    // often. (Especially ':', but '/' is used in cache_menu.)
+    // We can't turn them back into their own characters though; both are
+    // considered unsafe in filenames. So turn : -> <space> and / -> ^
+    return str_replace(array('%2F','%3A'), array('^',' '), urlencode($cid));
   }
 
   function decode_cid($filename) {
