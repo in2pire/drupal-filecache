@@ -1,14 +1,34 @@
 <?php // -*- indent-tabs-mode:nil -*-
 
-// Max filename length for cid. Doesn't include cache bin prefix.
-// Must be at least 34 (see FILECACHE_CID_FILENAME_POS_BEFORE_MD5).
+/**
+ * @file
+ * DrupalFileCache class that implements DrupalCacheInterface.
+ *
+ * This file is added to $conf['cache_backends'] array in site's
+ * settings.php so that DrupalFileCache class can be the handler for
+ * cache bins.
+ */
+
+/**
+ * Max filename length for cid.
+ *
+ *  Doesn't include cache bin prefix. Must be at least 34 (see
+ * FILECACHE_CID_FILENAME_POS_BEFORE_MD5).
+ */
 define('FILECACHE_CID_FILENAME_MAX', 200);
 
-// Cut point between not MD5 encoded and MD5 encoded
-// 34 is '%_' + 32 hexdigits for 128-bit MD5
-define('FILECACHE_CID_FILENAME_POS_BEFORE_MD5', FILECACHE_CID_FILENAME_MAX - 34);
+/**
+ * Cut point between not MD5 encoded and MD5 encoded.
+ *
+ * 34 is '%_' + 32 hexdigits for 128-bit MD5
+ */
+define('FILECACHE_CID_FILENAME_POS_BEFORE_MD5',
+       FILECACHE_CID_FILENAME_MAX - 34);
 
 
+/**
+ * Get base File Cache directory.
+ */
 function filecache_directory() {
   $filecache_directory = variable_get('filecache_directory', FALSE);
   if ($filecache_directory === FALSE) {
@@ -26,6 +46,11 @@ function filecache_directory() {
 
 class DrupalFileCache implements DrupalCacheInterface {
 
+  /**
+   * Construct DrupalFileCache for specified cache bin.
+   *
+   * @param $bin Cache bin name.
+   */
   function __construct($bin) {
     $this->bin = $bin;
     $filecache_directory = filecache_directory();
@@ -69,6 +94,12 @@ class DrupalFileCache implements DrupalCacheInterface {
     $this->prefix = $this->directory .'/'. $bin .'-';
   }
 
+  /**
+   * Make cache ID usable for file name.
+   *
+   * @param $cid Cache ID.
+   * @return String that is derived from $cid and can be used as file name.
+   */
   function encode_cid($cid) {
     // Use urlencode(), but turn the
     // encoded ':' and '/' back into ordinary characters since they're used so
@@ -86,10 +117,16 @@ class DrupalFileCache implements DrupalCacheInterface {
     return $safe_cid;
   }
 
-  function decode_cid($filename) {
-    return urldecode($filename);
-  }
-
+  /**
+   * Return data from the persistent cache. Data may be stored as either plain
+   * text or as serialized data. cache_get will automatically return
+   * unserialized objects and arrays.
+   *
+   * @param $cid
+   *   The cache ID of the data to retrieve.
+   * @return
+   *   The cache or FALSE on failure.
+   */
   function get($cid) {
     $filename = $this->prefix . $this->encode_cid($cid);
 
@@ -146,6 +183,16 @@ class DrupalFileCache implements DrupalCacheInterface {
     return $cache;
   }
 
+  /**
+   * Return data from the persistent cache when given an array of cache IDs.
+   *
+   * @param $cids
+   *   An array of cache IDs for the data to retrieve. This is passed by
+   *   reference, and will have the IDs successfully returned from cache
+   *   removed.
+   * @return
+   *   An array of the items successfully returned from cache indexed by cid.
+   */
   function getMultiple(&$cids) {
     $results = array();
     foreach ($cids as $cid) {
@@ -158,6 +205,24 @@ class DrupalFileCache implements DrupalCacheInterface {
     return $results;
   }
 
+  /**
+   * Store data in the persistent cache.
+   *
+   * @param $cid
+   *   The cache ID of the data to store.
+   * @param $data
+   *   The data to store in the cache. Complex data types will be automatically
+   *   serialized before insertion.
+   *   Strings will be stored as plain text and not serialized.
+   * @param $expire
+   *   One of the following values:
+   *   - CACHE_PERMANENT: Indicates that the item should never be removed unless
+   *     explicitly told to using cache_clear_all() with a cache ID.
+   *   - CACHE_TEMPORARY: Indicates that the item should be removed at the next
+   *     general cache wipe.
+   *   - A Unix timestamp: Indicates that the item should be kept at least until
+   *     the given time, after which it behaves like CACHE_TEMPORARY.
+   */
   function set($cid, $data, $expire = CACHE_PERMANENT) {
     $filename = $this->prefix . $this->encode_cid($cid);
 
@@ -204,6 +269,18 @@ class DrupalFileCache implements DrupalCacheInterface {
     }
   }
 
+  /**
+   * Expire data from the cache. If called without arguments, expirable
+   * entries will be cleared from the cache_page and cache_block bins.
+   *
+   * @param $cid
+   *   If set, the cache ID to delete. Otherwise, all cache entries that can
+   *   expire are deleted.
+   * @param $wildcard
+   *   If set to TRUE, the $cid is treated as a substring
+   *   to match rather than a complete ID. The match is a right hand
+   *   match. If '*' is given as $cid, the bin $bin will be emptied.
+   */
   function clear($cid = NULL, $wildcard = FALSE) {
     global $user;
 
@@ -254,11 +331,21 @@ class DrupalFileCache implements DrupalCacheInterface {
     }
   }
 
+  /**
+   * Delete a single cache object.
+   *
+   * @param $cid Cache ID.
+   */
   protected function delete_one($cid) {
     $filename = $this->prefix . $this->encode_cid($cid);
     @unlink($filename);
   }
 
+  /**
+   * List of all cache objects with specified prefix in their name.
+   *
+   * @param $cid_prefix Prefix for cache IDs to delete.
+   */
   protected function all($cid_prefix = '') {
     $list = array();
     $filename_prefix = $this->bin . '-' . $this->encode_cid($cid_prefix);
@@ -276,12 +363,20 @@ class DrupalFileCache implements DrupalCacheInterface {
     return $list;
   }
 
+  /**
+   * Delete all cache objects witch specified prefix in their name.
+   *
+   * @param $cid_prefix Prefix for cache IDs to delete.
+   */
   protected function delete_wildcard($cid_prefix) {
     foreach ($this->all($cid_prefix) as $filename) {
       @unlink ($this->directory . '/' . $filename);
     }
   }
 
+  /**
+   * Delete expired cache entries.
+   */
   protected function delete_expired() {
     $cwd = getcwd();
     chdir($this->directory);
@@ -306,6 +401,9 @@ class DrupalFileCache implements DrupalCacheInterface {
     chdir($cwd);
   }
 
+  /**
+   * Delete flushed cache entries.
+   */
   protected function delete_flushed() {
     static $recursion = FALSE; // XXX how cache.inc survives this?
     if ($recursion) {
@@ -342,6 +440,15 @@ class DrupalFileCache implements DrupalCacheInterface {
     $recursion = FALSE;
   }
 
+  /**
+   * Check if a cache bin is empty.
+   *
+   * A cache bin is considered empty if it does not contain any valid data for
+   * any cache ID.
+   *
+   * @return
+   *   TRUE if the cache bin specified is empty.
+   */
   function isEmpty() {
     return count($this->all()) == 0;
   }

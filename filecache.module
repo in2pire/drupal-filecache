@@ -1,7 +1,15 @@
 <?php // -*- indent-tabs-mode:nil -*-
 
+/**
+ * Maximum files to delete in a single cron run.
+ */
 define('FILECACHE_CRON_MAX_FILES', 100);
 
+/**
+ * File Cache implementation of hook_cron().
+ *
+ * @see hook_cron()
+ */
 function filecache_cron() {
 
   if (!function_exists('filecache_directory')) {
@@ -53,6 +61,12 @@ function filecache_cron() {
   cache_set('filecache_space', array('cache_size' => $cache_size));
 }
 
+/**
+ * File Cache implementation of hook_requirements().
+ *
+ * @param $phase Phase.
+ * @see hook_requirements()
+ */
 function filecache_requirements($phase) {
 
   $t = get_t();
