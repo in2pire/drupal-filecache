@@ -396,7 +396,7 @@ class DrupalFileCache implements DrupalCacheInterface {
         continue;
       }
       $cache = @unserialize($content);
-      if ($content === FALSE) {
+      if ($cache === FALSE) {
         continue;
       }
       if ($cache->expire == CACHE_PERMANENT) {
