@@ -237,7 +237,7 @@ class DrupalFileCache implements DrupalCacheInterface {
       // If file doesn't exist, create it with a+w permissions
       $fh = fopen($filename, 'c+b');
       if ($fh !== FALSE) {
-        if (!chmod($filename, 0777)) {
+        if (!chmod($filename, 0666)) {
           watchdog('filecache', 'Cannot chmod %filename',
                    array('%filename' => $filename), WATCHDOG_CRITICAL);
           return;
