@@ -6,7 +6,7 @@
 define('FILECACHE_CRON_MAX_FILES', 100);
 
 /**
- * File Cache implementation of hook_cron().
+ * Implements hook_cron().
  *
  * @see hook_cron()
  */
@@ -62,9 +62,10 @@ function filecache_cron() {
 }
 
 /**
- * File Cache implementation of hook_requirements().
+ * Implements hook_requirements().
  *
- * @param $phase Phase.
+ * @param $phase
+ *   Phase.
  * @see hook_requirements()
  */
 function filecache_requirements($phase) {
@@ -86,7 +87,7 @@ function filecache_requirements($phase) {
   $filecache_directory = filecache_directory();
 
   // Scan what cache bins we serve
-  $default_bin = (variable_get('cache_default_class','') == 'DrupalFileCache');
+  $default_bin = (variable_get('cache_default_class', '') == 'DrupalFileCache');
   $filecache_bins = array();
   $other_bins = array();
   global $conf;
@@ -95,7 +96,8 @@ function filecache_requirements($phase) {
       $bin = implode('_', array_slice(explode('_', $key), 2));
       if ($value == 'DrupalFileCache') {
         $filecache_bins[] = $bin;
-      } else {
+      }
+      else {
         $other_bins[] = $bin;
       }
     }
@@ -108,7 +110,7 @@ function filecache_requirements($phase) {
     $requirements['value'] = $t('No cache bins are served by File Cache.');
     $requirements['description'] = $readme_hint;
     return array('filecache' => $requirements);
-  }   
+  }
 
   // Show what cache bins we serve (in $requirements['value'])
   $requirements['severity'] = REQUIREMENT_OK;
@@ -116,15 +118,17 @@ function filecache_requirements($phase) {
     if (empty($other_bins)) {
       $requirements['value'] =
         $t('All cache bins are served by File Cache.');
-    } else {
+    }
+    else {
       $requirements['value'] =
         $t('All cache bins except %bins are served by File Cache.',
-           array('%bins' => $other_bins));
+	   array('%bins' => $other_bins));
     }
-  } else {
+  }
+  else {
     $requirements['value'] =
       $t('File Cache serves the following cache bins: %bins.',
-         array('%bins' => $filecache_bins));
+	 array('%bins' => $filecache_bins));
   }
 
   // Show filecache_directory and its size (in $requirements['description'])
@@ -133,15 +137,14 @@ function filecache_requirements($phase) {
   if ($space) {
     $requirements['description'] =
       $t('File Cache directory %dir uses !size (!time ago)',
-         array('%dir' => $filecache_directory,
-               '!size' => format_size($space->data['cache_size']),
-               '!time' => format_interval(REQUEST_TIME - $cron_last),
-               )
-         );
-  } else {
+	 array('%dir' => $filecache_directory,
+	       '!size' => format_size($space->data['cache_size']),
+	       '!time' => format_interval(REQUEST_TIME - $cron_last)));
+  }
+  else {
     $requirements['description'] =
       $t('File Cache directory %dir uses unknown disk space. Run cron to update.',
-         array('%dir' => $filecache_directory));
+	 array('%dir' => $filecache_directory));
   }
 
   return array('filecache' => $requirements);

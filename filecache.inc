@@ -22,8 +22,7 @@ define('FILECACHE_CID_FILENAME_MAX', 200);
  *
  * 34 is '%_' + 32 hexdigits for 128-bit MD5
  */
-define('FILECACHE_CID_FILENAME_POS_BEFORE_MD5',
-       FILECACHE_CID_FILENAME_MAX - 34);
+define('FILECACHE_CID_FILENAME_POS_BEFORE_MD5', FILECACHE_CID_FILENAME_MAX - 34);
 
 
 /**
@@ -49,7 +48,8 @@ class DrupalFileCache implements DrupalCacheInterface {
   /**
    * Construct DrupalFileCache for specified cache bin.
    *
-   * @param $bin Cache bin name.
+   * @param $bin
+   *   Cache bin name.
    */
   function __construct($bin) {
     $this->bin = $bin;
@@ -60,7 +60,8 @@ class DrupalFileCache implements DrupalCacheInterface {
     $hint = FALSE;
     if (empty($filecache_directory)) {
       $hint = t('Your web server is not Apache and so default filecache_directory cannot be used.');
-    } else {
+    }
+    else {
       if (!is_dir($filecache_directory)) {
         if (!file_exists($filecache_directory)) {
           // Directory does not exist. Try to create it.
@@ -73,10 +74,12 @@ class DrupalFileCache implements DrupalCacheInterface {
             rmdir($filecache_directory);
             $hint = $t('%dir does not exist, <samp>filecache.inc</samp> successfully created it but chmod 777 failed.', array('%dir' => $filecache_directory));
           }
-        } else {
+        }
+        else {
           $hint = $t('%dir is not directory.', array('%dir' => $filecache_directory));
         }
-      } elseif (!is_writable($filecache_directory)) {
+      }
+      elseif (!is_writable($filecache_directory)) {
         $hint = $t('%dir is directory but PHP cannot write to it.', array('%dir' => $filecache_directory));
       }
     }
@@ -86,19 +89,21 @@ class DrupalFileCache implements DrupalCacheInterface {
 
 <p><?php print $t('Hint: @hint', array('@hint' => $hint)) ?></p>
 <?php
-      die();
+      exit();
     }
 
-    //@todo Support custom prefix
+    // @todo Support custom prefix
     $this->directory = $filecache_directory;
-    $this->prefix = $this->directory .'/'. $bin .'-';
+    $this->prefix = $this->directory . '/' . $bin . '-';
   }
 
   /**
    * Make cache ID usable for file name.
    *
-   * @param $cid Cache ID.
-   * @return String that is derived from $cid and can be used as file name.
+   * @param $cid
+   *   Cache ID.
+   * @return
+   *   String that is derived from $cid and can be used as file name.
    */
   function encode_cid($cid) {
     // Use urlencode(), but turn the
@@ -106,7 +111,7 @@ class DrupalFileCache implements DrupalCacheInterface {
     // often. (Especially ':', but '/' is used in cache_menu.)
     // We can't turn them back into their own characters though; both are
     // considered unsafe in filenames. So turn : -> <space> and / -> ^
-    $safe_cid = str_replace(array('%2F','%3A'), array('^',' '), urlencode($cid));
+    $safe_cid = str_replace(array('%2F', '%3A'), array('^', ' '), urlencode($cid));
     if (strlen($safe_cid) > FILECACHE_CID_FILENAME_MAX) {
       $safe_cid =
         substr($safe_cid, 0, FILECACHE_CID_FILENAME_POS_BEFORE_MD5) .
@@ -161,7 +166,7 @@ class DrupalFileCache implements DrupalCacheInterface {
     }
 
     // XXX Should reproduce the cache_lifetime / cache_flush_$bin logic
-    $cache_flush = variable_get('filecache_flush_'. $this->bin, 0);
+    $cache_flush = variable_get('filecache_flush_' . $this->bin, 0);
     if ($cache->expire != CACHE_TEMPORARY && // XXX how to handle this?
         $cache->expire != CACHE_PERMANENT &&
         ($cache->expire < REQUEST_TIME ||
@@ -176,7 +181,7 @@ class DrupalFileCache implements DrupalCacheInterface {
     // XXX should check only once in a page request if we have such
     // XXX filesystem and set $this->touch so that here we now what to do
     // XXX should be configurable
-    //touch($filename);
+    // touch($filename);
 
     // XXX should assert($cache->cid == $cid)
 
@@ -237,7 +242,8 @@ class DrupalFileCache implements DrupalCacheInterface {
                    array('%filename' => $filename), WATCHDOG_CRITICAL);
           return;
         }
-      } else {
+      }
+      else {
         // most likely permission error - report it as critical error
         watchdog('filecache', 'Cannot open %filename',
                  array('%filename' => $filename), WATCHDOG_CRITICAL);
@@ -334,7 +340,8 @@ class DrupalFileCache implements DrupalCacheInterface {
   /**
    * Delete a single cache object.
    *
-   * @param $cid Cache ID.
+   * @param $cid
+   *   Cache ID.
    */
   protected function delete_one($cid) {
     $filename = $this->prefix . $this->encode_cid($cid);
@@ -344,7 +351,8 @@ class DrupalFileCache implements DrupalCacheInterface {
   /**
    * List of all cache objects with specified prefix in their name.
    *
-   * @param $cid_prefix Prefix for cache IDs to delete.
+   * @param $cid_prefix
+   *   Prefix for cache IDs to delete.
    */
   protected function all($cid_prefix = '') {
     $list = array();
@@ -366,7 +374,8 @@ class DrupalFileCache implements DrupalCacheInterface {
   /**
    * Delete all cache objects witch specified prefix in their name.
    *
-   * @param $cid_prefix Prefix for cache IDs to delete.
+   * @param $cid_prefix
+   *   Prefix for cache IDs to delete.
    */
   protected function delete_wildcard($cid_prefix) {
     foreach ($this->all($cid_prefix) as $filename) {
