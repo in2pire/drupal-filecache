@@ -9,7 +9,7 @@ storing in database.
 
 Built-in Drupal cache uses database backend.  There is one SQL query
 for each accessed cache entry.  This is much slower than simple file
-access as used by filecache module.  
+access as used by filecache module.
 
 memcache module is the closest caching module. File Cache can be
 configured to use memory filesystem (e.g. /dev/shm in Debian) which is
@@ -79,6 +79,17 @@ exist and there should be no problem with permissions since it's in
 $conf['cache_backends'] = array('sites/all/modules/filecache/filecache.inc');
 $conf['cache_default_class'] = 'DrupalFileCache';
 $conf['filecache_directory'] = '/tmp/filecache-' . substr(conf_path(), 6);
+
+* USING IGBNARY
+
+In case you want to use igbinary, enable it in your settings.php and make sure
+that you enabled PHP igbinary extension.
+
+$conf['filecache_igbinary_enabled'] = TRUE;
+
+After configuration, don't run the website or it will crash. You need to go to
+filecache directory on server (which is filecache_directory setting), delete
+that folder.
 
 * NOT IMPLEMENTED YET: filecache_fast_pagecache
 

@@ -24,6 +24,26 @@ define('FILECACHE_CID_FILENAME_MAX', 200);
  */
 define('FILECACHE_CID_FILENAME_POS_BEFORE_MD5', FILECACHE_CID_FILENAME_MAX - 34);
 
+if (variable_get('filecache_igbinary_enabled', FALSE) &&
+    function_exists('igbinary_serialize')
+) {
+  function _filecache_serialize($value) {
+    return igbinary_serialize($value);
+  }
+
+  function _filecache_unserialize($value) {
+    return igbinary_unserialize($value);
+  }
+}
+else {
+  function _filecache_serialize($value) {
+    return serialize($value);
+  }
+
+  function _filecache_unserialize($value) {
+    return unserialize($value);
+  }
+}
 
 /**
  * Get base File Cache directory.
@@ -143,7 +163,7 @@ class DrupalFileCache implements DrupalCacheInterface {
     if ($content === FALSE) {
       return FALSE;
     }
-    $cache = @unserialize($content);
+    $cache = @_filecache_unserialize($content);
     if ($cache === FALSE) {
       // we are in the middle of cache_set
       $fh = fopen($filename, 'rb');
@@ -154,7 +174,7 @@ class DrupalFileCache implements DrupalCacheInterface {
         fclose($fh);
         return FALSE;
       }
-      $cache = @unserialize(@stream_get_contents($fh));
+      $cache = @_filecache_unserialize(@stream_get_contents($fh));
       if ($cache === FALSE ||
           flock($fh, LOCK_UN) === FALSE ||
           fclose($fh) === FALSE) {
@@ -264,7 +284,7 @@ class DrupalFileCache implements DrupalCacheInterface {
     $cache->data = $data;
 
     if (ftruncate($fh, 0) === FALSE ||
-        fwrite($fh, serialize($cache)) === FALSE ||
+        fwrite($fh, _filecache_serialize($cache)) === FALSE ||
         flock($fh, LOCK_UN) === FALSE ||
         fclose($fh) === FALSE) {
       // XXX should not happen -> cleanup
@@ -395,7 +415,7 @@ class DrupalFileCache implements DrupalCacheInterface {
       if ($content === FALSE) {
         continue;
       }
-      $cache = @unserialize($content);
+      $cache = @_filecache_unserialize($content);
       if ($cache === FALSE) {
         continue;
       }
@@ -434,7 +454,7 @@ class DrupalFileCache implements DrupalCacheInterface {
         if ($content === FALSE) {
           continue;
         }
-        $cache = @unserialize($content);
+        $cache = @_filecache_unserialize($content);
         if ($content === FALSE) {
           continue;
         }
